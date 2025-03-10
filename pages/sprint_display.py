@@ -327,7 +327,7 @@ def display_team_performance(df_issues):
 
     # Lọc các task (không phải Epic và không phải subtask)
     tasks = df_issues[
-        (df_issues["issuetype"] != "Epic") & (df_issues["is_subtask"] == False)
+        (df_issues["issuetype"] != "Epic")
     ]
 
     # Tính toán hiệu suất theo người
@@ -671,11 +671,6 @@ def display_sprint_overview(sprint, issues):
 
         # Hiển thị biểu đồ thống kê theo loại issue
         display_issue_type_chart(df_issues)
-        # Hiển thị burndown chart dựa trên thời gian ước tính
-        display_burndown_chart(df_issues, sprint)
-
-        # Hiển thị burndown chart dựa trên số lượng task và subtask
-        display_task_burndown_chart(df_issues, sprint)
 
         # Hiển thị hiệu suất của team và từng người
         df_performance = display_team_performance(df_issues)
@@ -685,6 +680,12 @@ def display_sprint_overview(sprint, issues):
 
         # Hiển thị biểu đồ hiệu suất về thời gian
         display_time_efficiency_chart(df_performance)
+
+        # Hiển thị burndown chart dựa trên thời gian ước tính
+        display_burndown_chart(df_issues, sprint)
+
+        # Hiển thị burndown chart dựa trên số lượng task và subtask
+        display_task_burndown_chart(df_issues, sprint)
 
         # Hiển thị DataFrame trong expander để tiết kiệm không gian
         with st.expander("Xem danh sách tất cả các issues"):
