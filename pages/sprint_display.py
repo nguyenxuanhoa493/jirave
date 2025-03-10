@@ -676,7 +676,7 @@ def display_sprint_overview(sprint, issues):
         df_performance = display_team_performance(df_issues)
 
         # Hiển thị biểu đồ hiệu suất tổng hợp cho các developer
-        display_developer_summary_chart(df_issues, df_performance)
+        # display_developer_summary_chart(df_issues, df_performance)
 
         # Hiển thị biểu đồ hiệu suất về thời gian
         display_time_efficiency_chart(df_performance)
