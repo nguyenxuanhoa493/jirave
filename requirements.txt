@@ -1,0 +1,17 @@
+<<<<<<< HEAD
+plotly
+pandas
+requests
+load_dotenv
+tabulate
+pytz
+=======
+plotly==5.18.0
+pandas==2.1.1
+requests==2.31.0
+python-dotenv==1.0.0
+tabulate==0.9.0
+pytz==2023.3
+streamlit==1.28.2 
+openpyxl
+>>>>>>> 030d3cb (ok)
