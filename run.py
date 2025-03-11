@@ -13,7 +13,14 @@ def run_streamlit():
         os.chdir(script_dir)
 
         # Run the Streamlit app
-        cmd = [sys.executable, "-m", "streamlit", "run", "app.py", "--server.port=8503"]
+        cmd = [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            "Home.py",
+            "--server.port=8503",
+        ]
         subprocess.run(cmd)
     except Exception as e:
         print(f"Error running Streamlit app: {e}")
