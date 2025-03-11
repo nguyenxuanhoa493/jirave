@@ -184,7 +184,7 @@ def main():
                     y=dates,
                     text=text_data,
                     texttemplate="%{text}",
-                    textfont={"size": 14, "color": "black", "weight": "bold"},
+                    textfont={"size": 14, "color": "black"},
                     showscale=True,
                     colorscale=HEATMAP_COLORSCALE,
                     hoverongaps=False,
