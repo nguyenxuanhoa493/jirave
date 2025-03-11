@@ -44,17 +44,22 @@ class JiraClient:
             st.error(f"Error connecting to Jira API: {str(e)}")
             return None
 
-    def get_issue(self, issue_key):
+    def get_issue(self, issue_key, custom_field_ids=None):
         """Get details for a specific issue
 
         Args:
             issue_key (str): The issue key (e.g., 'CLD-123')
+            custom_field_ids (list, optional): List of custom field IDs to include
 
         Returns:
             dict: The issue data if successful, None otherwise
         """
         # Lấy tất cả các trường cần thiết
         fields = "summary,status,issuetype,priority,assignee,reporter,created,updated,description,customfield_10016,timeoriginalestimate,timeestimate,timespent"
+
+        # Nếu có custom fields, thêm vào fields
+        if custom_field_ids:
+            fields += "," + ",".join(custom_field_ids)
 
         params = {"fields": fields}
 
@@ -89,7 +94,7 @@ class JiraClient:
             list: The matching issues if successful, empty list otherwise
         """
         if fields is None:
-            fields = ["summary", "worklog", "assignee"]
+            fields = ["summary", "status", "assignee"]
 
         params = {"jql": jql, "fields": ",".join(fields), "maxResults": max_results}
 
@@ -116,10 +121,9 @@ class JiraClient:
             project_key (str): The project key
 
         Returns:
-            list: All boards if successful, empty list otherwise
+            list: The boards if successful, empty list otherwise
         """
         params = {"projectKeyOrId": project_key}
-
         response = self.get("board", params=params, use_agile_api=True)
         if response and response.status_code == 200:
             return response.json().get("values", [])
@@ -133,12 +137,9 @@ class JiraClient:
             state (str, optional): Filter sprints by state (active, future, closed)
 
         Returns:
-            list: All sprints if successful, empty list otherwise
+            list: The sprints if successful, empty list otherwise
         """
-        params = {}
-        if state:
-            params["state"] = state
-
+        params = {"state": state} if state else {}
         response = self.get(
             f"board/{board_id}/sprint", params=params, use_agile_api=True
         )
@@ -146,12 +147,13 @@ class JiraClient:
             return response.json().get("values", [])
         return []
 
-    def get_sprint_issues(self, sprint_id, fields=None):
+    def get_sprint_issues(self, sprint_id, fields=None, status_names=None):
         """Get all issues in a sprint
 
         Args:
             sprint_id (int): The sprint ID
             fields (list, optional): List of fields to include in the response
+            status_names (list, optional): List of status names to filter issues by
 
         Returns:
             list: All issues if successful, empty list otherwise
@@ -169,7 +171,14 @@ class JiraClient:
                 "timeoriginalestimate",
             ]
 
+        # Tạo JQL query với điều kiện status nếu được chỉ định
+        jql = f"sprint = {sprint_id}"
+        if status_names:
+            status_conditions = [f'status = "{status}"' for status in status_names]
+            jql += f" AND ({' OR '.join(status_conditions)})"
+
         params = {
+            "jql": jql,
             "fields": ",".join(fields),
             "maxResults": 50,
             "expand": "",
@@ -180,9 +189,7 @@ class JiraClient:
 
         while True:
             params["startAt"] = start_at
-            response = self.get(
-                f"sprint/{sprint_id}/issue", params=params, use_agile_api=True
-            )
+            response = self.get("search", params=params)
             if response and response.status_code == 200:
                 issues = response.json().get("issues", [])
                 all_issues.extend(issues)
@@ -238,9 +245,12 @@ class JiraClient:
         return {}
 
     def get_custom_fields(self):
-        """Get custom fields from Jira"""
-        endpoint = "field"
-        response = self.get(endpoint)
+        """Get all custom fields
+
+        Returns:
+            list: All custom fields if successful, empty list otherwise
+        """
+        response = self.get("field")
         if response:
             fields = response.json()
             custom_fields = [field for field in fields if field.get("custom")]
@@ -292,27 +302,17 @@ class JiraClient:
 
         all_sprints = []
 
-        # Get sprints from the main board (usually the first one)
-        board_id = boards[0]["id"]
+        # Loop through each board and get all sprints
+        for board in boards:
+            board_id = board["id"]
 
-        # Get all sprints (active, closed, future) for the board
-        sprints = self.get_board_sprints(board_id)
+            # Get all sprints for this board (active, future, closed)
+            for state in ["active", "future", "closed"]:
+                sprints = self.get_board_sprints(board_id, state=state)
+                all_sprints.extend(sprints)
 
-        # Sort sprints by name in reverse order (assuming names contain sprint numbers)
-        if sprints:
-            # Kiểm tra và thêm các trường cần thiết nếu thiếu
-            for sprint in sprints:
-                # Đảm bảo có trường startDate và endDate
-                if "startDate" not in sprint:
-                    sprint["startDate"] = None
-                if "endDate" not in sprint:
-                    sprint["endDate"] = None
-                if "completeDate" not in sprint:
-                    sprint["completeDate"] = None
-
-            # Sắp xếp các sprint theo tên (giả định tên chứa số sprint)
-            sprints.sort(key=lambda x: x.get("name", ""), reverse=True)
-            all_sprints.extend(sprints)
+        # Sort sprints by start date (newest first)
+        all_sprints.sort(key=lambda x: x.get("startDate", ""), reverse=True)
 
         return all_sprints
 
@@ -324,3 +324,150 @@ class JiraClient:
         """
         # Implement your API request logic here
         pass
+
+    def get_field_details(self, field_id):
+        """Get details of a field including whether it's editable
+
+        Args:
+            field_id (str): The ID of the field
+
+        Returns:
+            dict: Field details if successful, None otherwise
+        """
+        response = self.get(f"field/{field_id}")
+        if response and response.status_code == 200:
+            return response.json()
+        return None
+
+    def get_custom_field_id(self, field_name):
+        """Get custom field ID by name
+
+        Args:
+            field_name (str): The name of the custom field
+
+        Returns:
+            str: The custom field ID if found, None otherwise
+        """
+        custom_fields = self.get_custom_fields()
+        for field in custom_fields:
+            if field.get("name") == field_name:
+                return field.get("id")
+        return None
+
+    def update_custom_fields(self, issues, data_set):
+        """Cập nhật nhiều custom field cho danh sách issues
+
+        Args:
+            issues (list): Danh sách các issue cần cập nhật
+            data_set (dict): Dictionary chứa cặp {field_name: value} cần cập nhật
+
+        Returns:
+            dict: Kết quả cập nhật cho từng field
+                {
+                    field_name: {
+                        'success': bool,
+                        'message': str,
+                        'updated_issues': int
+                    }
+                }
+        """
+        if not issues:
+            return {"error": "Không có issue nào để cập nhật"}
+
+        results = {}
+        test_issue = [issues[0]]
+
+        for field_name, value in data_set.items():
+            field_id = self.get_custom_field_id(field_name)
+            if not field_id:
+                results[field_name] = {
+                    "success": False,
+                    "message": f'Không tìm thấy custom field "{field_name}"',
+                    "updated_issues": 0,
+                }
+                continue
+
+            # Thử nghiệm với issue đầu tiên
+            test_success = self.update_issues_custom_field(
+                issues=test_issue, custom_field_id=field_id, value=value
+            )
+
+            if not test_success:
+                results[field_name] = {
+                    "success": False,
+                    "message": f"Thử nghiệm cập nhật {field_name} thất bại",
+                    "updated_issues": 0,
+                }
+
+    def post(self, endpoint, payload):
+        """Make a POST request to the Jira API
+
+        Args:
+            endpoint (str): The API endpoint to call
+            payload (dict): The data to send in the request body
+
+        Returns:
+            requests.Response: The response from the API
+        """
+        try:
+            response = requests.post(
+                f"{self.JIRA_URL}{endpoint}",
+                headers=self.headers,
+                auth=self.auth,
+                json=payload,
+            )
+            return response
+        except requests.exceptions.RequestException as e:
+            print(f"Error connecting to Jira API: {str(e)}")
+            return None
+
+    def put(self, endpoint, payload):
+        """Make a PUT request to the Jira API
+
+        Args:
+            endpoint (str): The API endpoint to call
+            payload (dict): The data to send in the request body
+
+        Returns:
+            requests.Response: The response from the API
+        """
+        try:
+            response = requests.put(
+                f"{self.JIRA_URL}{endpoint}",
+                headers=self.headers,
+                auth=self.auth,
+                json=payload,
+            )
+            return response
+        except requests.exceptions.RequestException as e:
+            print(f"Error connecting to Jira API: {str(e)}")
+            return None
+
+    def update_issue(self, issue_key, fields_data):
+        """Update fields for a specific issue
+
+        Args:
+            issue_key (str): The issue key (e.g., 'CLD-123')
+            fields_data (dict): Dictionary containing the fields to update
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        payload = {"fields": fields_data}
+
+        response = self.put(f"issue/{issue_key}", payload)
+
+        if response and response.status_code in [200, 204]:
+            return True
+
+        if response:
+            try:
+                error_data = response.json()
+                print(f"Error updating issue {issue_key}:")
+                print(f"Status code: {response.status_code}")
+                print(f"Error messages: {error_data.get('errorMessages', [])}")
+                print(f"Errors: {error_data.get('errors', {})}")
+            except:
+                print(f"Error updating issue {issue_key}: {response.text}")
+
+        return False
