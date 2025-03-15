@@ -1230,7 +1230,10 @@ def main():
 
     # Tải danh sách sprint từ API
     with st.spinner("Đang tải danh sách sprint từ Jira API..."):
-        sprints = sprint_service.get_all_sprints(DEFAULT_PROJECT)
+        # Kiểm tra xem sprints đã có trong session_state chưa
+        if "sprints" not in st.session_state:
+            st.session_state.sprints = sprint_service.get_all_sprints(DEFAULT_PROJECT)
+        sprints = st.session_state.sprints
 
     if not sprints:
         st.error(f"Không tìm thấy sprint nào cho dự án {DEFAULT_PROJECT}")
@@ -1281,13 +1284,32 @@ def main():
         options=range(len(sprint_options)),
         format_func=lambda i: sprint_options[i]["display"],
         index=active_sprint_index,  # Mặc định chọn sprint đang active
+        key="selected_sprint_idx",
     )
 
     selected_sprint = sprint_options[selected_sprint_idx]
     sprint_id = selected_sprint["id"]
 
     # Lấy dữ liệu issues từ MongoDB ngay khi chọn sprint
-    issues = sprint_service.get_sprint_issues_from_mongo(sprint_id)
+    # Kiểm tra xem sprint_id hiện tại có khác với sprint_id đã lưu không
+    should_reload_data = (
+        "current_sprint_id" not in st.session_state
+        or st.session_state.current_sprint_id != sprint_id
+        or "issues" not in st.session_state
+    )
+
+    if should_reload_data:
+        with st.spinner("Đang tải dữ liệu từ MongoDB..."):
+            issues = sprint_service.get_sprint_issues_from_mongo(sprint_id)
+            st.session_state.issues = issues
+            st.session_state.current_sprint_id = sprint_id
+
+            # Cũng tải thông tin sprint từ MongoDB
+            sprint_mongo_info = sprint_service.get_sprint_info_from_mongo(sprint_id)
+            st.session_state.sprint_mongo_info = sprint_mongo_info
+    else:
+        issues = st.session_state.issues
+        sprint_mongo_info = st.session_state.sprint_mongo_info
 
     if not issues:
         st.warning(f"Không tìm thấy dữ liệu cho sprint này trong MongoDB!")
@@ -1295,9 +1317,6 @@ def main():
             "Vui lòng đồng bộ dữ liệu sprint này trong trang **Đồng bộ dữ liệu** trước khi xem báo cáo."
         )
         st.stop()
-
-    # Lấy thông tin sprint từ MongoDB bao gồm updated_at
-    sprint_mongo_info = sprint_service.get_sprint_info_from_mongo(sprint_id)
 
     # Hiển thị thời gian cập nhật cuối cùng nếu có
     if sprint_mongo_info and "updated_at" in sprint_mongo_info:
