@@ -1302,12 +1302,21 @@ def main():
     # Hiển thị thời gian cập nhật cuối cùng nếu có
     if sprint_mongo_info and "updated_at" in sprint_mongo_info:
         updated_at = sprint_mongo_info["updated_at"]
-        # Chuyển đổi thời gian UTC sang múi giờ Việt Nam (GMT+7)
+        # Hiển thị thời gian theo múi giờ GMT+0
         if isinstance(updated_at, datetime):
-            vietnam_tz = pytz.timezone("Asia/Ho_Chi_Minh")
-            updated_at = updated_at.replace(tzinfo=pytz.UTC).astimezone(vietnam_tz)
+            # Nếu thời gian đã có thông tin timezone
+            if updated_at.tzinfo is not None:
+                # Chuyển sang múi giờ UTC (GMT+0)
+                utc_tz = pytz.timezone("UTC")
+                updated_at = updated_at.astimezone(utc_tz)
+            else:
+                # Nếu không có thông tin timezone, giả định thời gian đã là UTC
+                # Chỉ cần gán nhãn UTC cho nó
+                utc_tz = pytz.timezone("UTC")
+                updated_at = utc_tz.localize(updated_at)
+
             formatted_time = updated_at.strftime("%d/%m/%Y %H:%M:%S")
-            st.info(f"Dữ liệu được cập nhật lần cuối: {formatted_time} (GMT+7)")
+            st.info(f"Dữ liệu được cập nhật lần cuối: {formatted_time}")
 
     # Thêm bộ lọc show_in_dashboard_final và include_todo trong cùng một hàng
     filter_col1, filter_col2 = st.columns(2)
