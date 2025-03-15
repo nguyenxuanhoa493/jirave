@@ -41,10 +41,17 @@ class IssueDetailService:
             dict: The issue data if successful, None otherwise
         """
         try:
-            issue = self.jira.get_issue(issue_key)
-            if not issue:
+            # Lấy tất cả các trường cần thiết
+            fields = "summary,status,issuetype,priority,assignee,reporter,created,updated,description,customfield_10016,timeoriginalestimate,timeestimate,timespent,customfield_10031"
+
+            params = {"fields": fields}
+
+            response = self.jira.get(f"issue/{issue_key}", params=params)
+            if not response or response.status_code != 200:
                 st.error(f"Không tìm thấy issue với key: {issue_key}")
                 return None
+
+            issue = response.json()
 
             # Lấy thêm worklog
             worklogs = self.jira.get_issue_worklogs(issue_key)
@@ -76,6 +83,30 @@ class IssueDetailService:
         # Xử lý reporter có thể None
         reporter_obj = fields.get("reporter") or {}
         reporter = reporter_obj.get("displayName", "Không có")
+
+        # Xử lý trường Tester (customfield_10031)
+        tester = "Không có"
+        cf_tester = fields.get("customfield_10031")
+        if cf_tester:
+            if isinstance(cf_tester, dict) and "displayName" in cf_tester:
+                # Trường hợp tester là một user Jira
+                tester = cf_tester.get("displayName", "Không có")
+            elif isinstance(cf_tester, dict) and "value" in cf_tester:
+                # Trường hợp tester là một trường tùy chỉnh với giá trị
+                tester = cf_tester.get("value", "Không có")
+            elif isinstance(cf_tester, list) and len(cf_tester) > 0:
+                # Trường hợp tester là một danh sách (User Picker multiple users)
+                # Chỉ lấy người dùng đầu tiên trong danh sách
+                first_tester = cf_tester[0]
+                if isinstance(first_tester, dict) and "displayName" in first_tester:
+                    tester = first_tester.get("displayName", "Không có")
+                elif isinstance(first_tester, dict) and "value" in first_tester:
+                    tester = first_tester.get("value", "Không có")
+                else:
+                    tester = str(first_tester)
+            else:
+                # Trường hợp khác
+                tester = str(cf_tester)
 
         # Xử lý các trường ngày tháng
         created = fields.get("created", "")
@@ -110,6 +141,7 @@ class IssueDetailService:
             "priority": fields.get("priority", {}).get("name", ""),
             "assignee": assignee,
             "reporter": reporter,
+            "tester": tester,
             "created": created,
             "updated": updated,
             "story_points": story_points,
@@ -155,11 +187,13 @@ def display_basic_info(basic_info):
     with col3:
         st.info(f"**Độ ưu tiên:** {basic_info['priority']}")
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.info(f"**Người được gán:** {basic_info['assignee']}")
     with col2:
         st.info(f"**Người tạo:** {basic_info['reporter']}")
+    with col3:
+        st.info(f"**Người test:** {basic_info['tester']}")
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -266,7 +300,7 @@ def display_worklog_table(issue_data):
         st.metric("Tổng số giờ đã log", f"{total_hours:.2f}h")
 
 
-def main(): 
+def main():
     st.title("Chi tiết Issue")
 
     # Initialize service

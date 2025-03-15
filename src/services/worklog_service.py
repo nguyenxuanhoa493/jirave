@@ -1,6 +1,9 @@
 import streamlit as st
 from src.services.jira_client import JiraClient
 from src.config.config import DEFAULT_PROJECT
+from datetime import datetime, date
+from src.utils.date_utils import get_current_time
+from src.config.config import DEFAULT_TIMEZONE
 
 
 class WorklogReport:
@@ -29,23 +32,58 @@ class WorklogReport:
         if project_key is None:
             project_key = self.project_key
 
+        # Xác thực ngày để tránh truy vấn với ngày trong tương lai
+        today = get_current_time(DEFAULT_TIMEZONE).date().strftime("%Y-%m-%d")
+
+        # Chuyển đổi chuỗi ngày thành đối tượng datetime.date để so sánh
+        try:
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+            if end_date:
+                end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+            else:
+                end_date_obj = start_date_obj
+
+            today_obj = datetime.strptime(today, "%Y-%m-%d").date()
+
+            # Giới hạn ngày
+            if start_date_obj > today_obj:
+                start_date = today
+                st.warning(
+                    f"Ngày bắt đầu trong tương lai, đã điều chỉnh thành ngày hiện tại: {today}"
+                )
+
+            if end_date_obj > today_obj:
+                end_date = today
+                st.warning(
+                    f"Ngày kết thúc trong tương lai, đã điều chỉnh thành ngày hiện tại: {today}"
+                )
+        except Exception as e:
+            st.error(f"Lỗi khi xác thực ngày: {str(e)}")
+            # Sử dụng ngày hôm nay nếu có lỗi
+            start_date = today
+            end_date = today
+
         # Build JQL query
         jql = f'project = {project_key} AND worklogDate >= "{start_date}"'
         if end_date:
             jql += f' AND worklogDate <= "{end_date}"'
 
-        # Get issues with worklogs
-        issues = self.jira.search_issues(
-            jql=jql, fields=["worklog", "summary", "assignee"], max_results=1000
-        )
-
-        if not issues:
-            st.warning(
-                f"No issues found with worklogs in the date range for project {project_key}"
+        try:
+            # Get issues with worklogs
+            issues = self.jira.search_issues(
+                jql=jql, fields=["worklog", "summary", "assignee"], max_results=1000
             )
-            return None
 
-        return self._process_worklogs(issues, start_date, end_date)
+            if not issues:
+                st.warning(
+                    f"No issues found with worklogs in the date range for project {project_key}"
+                )
+                return None
+
+            return self._process_worklogs(issues, start_date, end_date)
+        except Exception as e:
+            st.error(f"Lỗi khi lấy dữ liệu từ API: {str(e)}")
+            return None
 
     def _process_worklogs(self, issues, start_date, end_date):
         """Process raw worklog data into structured format

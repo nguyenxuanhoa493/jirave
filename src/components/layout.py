@@ -22,6 +22,7 @@ class DateSelector:
         today = get_current_time(DEFAULT_TIMEZONE).replace(
             hour=9, minute=0, second=0, microsecond=0
         )
+        today_date = today.date()
 
         # Date selection in columns
         col1, col2, col3 = st.columns(3)
@@ -42,23 +43,43 @@ class DateSelector:
 
         # Xử lý các loại báo cáo khác nhau
         if report_type == "Today":
-            start_date = today.date()
-            end_date = today.date()
+            start_date = today_date
+            end_date = today_date
         elif report_type == "Yesterday":
             start_date = (today - timedelta(days=1)).date()
             end_date = (today - timedelta(days=1)).date()
         elif report_type == "This week":
             start_date, end_date = get_week_start_end(today)
+            # Đảm bảo end_date không vượt quá ngày hiện tại
+            end_date = min(end_date, today_date)
         elif report_type == "Last week":
             start_date, end_date = get_last_week_start_end()
         elif report_type == "Last 7 days":
             start_date = (today - timedelta(days=6)).date()
-            end_date = today.date()
+            end_date = today_date
         else:  # Custom
             with col2:
-                start_date = st.date_input("Start Date")
+                # Giới hạn không thể chọn ngày trong tương lai
+                start_date = st.date_input(
+                    "Start Date", value=today_date, max_value=today_date
+                )
             with col3:
-                end_date = st.date_input("End Date")
+                end_date = st.date_input(
+                    "End Date", value=today_date, max_value=today_date
+                )
+
+        # Double-check để đảm bảo không có ngày nào trong tương lai
+        if start_date > today_date:
+            st.warning(
+                f"Không thể chọn ngày bắt đầu trong tương lai. Đã điều chỉnh về ngày hiện tại."
+            )
+            start_date = today_date
+
+        if end_date > today_date:
+            st.warning(
+                f"Không thể chọn ngày kết thúc trong tương lai. Đã điều chỉnh về ngày hiện tại."
+            )
+            end_date = today_date
 
         return start_date, end_date
 

@@ -55,7 +55,7 @@ def main():
     # print_issue_details(issue_data)
 
     # Lưu thông tin ra file
-    save_issue_json(issue_data, issue_key)
+    save_issue_json(issue_data, "CLD-2")
 
 
 if __name__ == "__main__":

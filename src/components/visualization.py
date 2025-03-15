@@ -4,84 +4,9 @@ import plotly.express as px
 import pandas as pd
 import numpy as np
 import os
-from src.config.config import HEATMAP_COLORSCALE, TAILWIND_TABLE_CSS
+from src.config.config import HEATMAP_COLORSCALE, TAILWIND_TABLE_CSS, GROUP_TABLE_CSS
 
-# Thêm CSS cho group table với các nhóm hiển thị mặc định
-GROUP_TABLE_CSS = """
-<style>
-.tailwind-table {
-    margin-top: 10px;
-    width: 100%;
-    border-collapse: collapse;
-    border-spacing: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-.tailwind-table th {
-    background-color: #f3f4f6;
-    font-weight: 600;
-    text-align: center;
-    padding: 12px 16px;
-    border-bottom: 2px solid #e5e7eb;
-    color: #374151;
-    text-transform: uppercase;
-    font-size: 14px;
-    letter-spacing: 0.05em;
-}
-
-.tailwind-table td {
-    padding: 12px 16px;
-    border-bottom: 1px solid #e5e7eb;
-    color: #1f2937;
-    vertical-align: middle;
-}
-
-.group-header {
-    background-color: #e5e7eb;
-    font-weight: bold;
-}
-
-.group-header td {
-    padding: 12px 16px !important; 
-}
-
-.group-header:hover {
-    background-color: #d1d5db;
-}
-
-.group-row {
-    background-color: #f9fafb;
-}
-
-.group-row:hover {
-    background-color: #f3f4f6;
-}
-
-.inner-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.inner-table td {
-    padding: 10px 16px;
-    border-bottom: 1px solid #e5e7eb;
-}
-
-.tailwind-table a {
-    color: #2563eb;
-    text-decoration: none;
-    font-weight: 500;
-}
-
-.tailwind-table a:hover {
-    text-decoration: underline;
-    color: #1d4ed8;
-}
-</style>
-"""
+# Thêm CSS cho group table với các nhóm hiển thị mặc định được di chuyển sang config.py
 
 
 class DataVisualizer:
@@ -341,9 +266,6 @@ class DataVisualizer:
 
             # Sắp xếp theo Author để nhóm
             df = df.sort_values(by=["Author"])
-
-            # Tạo bảng HTML trực tiếp
-            st.write("### Detailed Log Table (Grouped by User)")
 
             # Hiển thị CSS
             st.markdown(GROUP_TABLE_CSS, unsafe_allow_html=True)
