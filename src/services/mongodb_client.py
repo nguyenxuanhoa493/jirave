@@ -746,6 +746,40 @@ class MongoDBClient:
                 st.error(f"Lỗi khi lấy dữ liệu từ MongoDB: {str(e)}")
             return []
 
+    def get_sprint_info(self, sprint_id):
+        """Lấy thông tin sprint từ MongoDB
+
+        Args:
+            sprint_id (str): ID của sprint
+
+        Returns:
+            dict: Thông tin sprint, hoặc None nếu không tìm thấy
+        """
+        if not self.is_connected():
+            if is_running_in_streamlit():
+                st.warning("Chưa kết nối đến MongoDB. Không thể lấy dữ liệu.")
+            return None
+
+        try:
+            # Sử dụng collection "data"
+            collection = self.db["data"]
+
+            # Tìm document sprint với _id tương ứng
+            sprint_document = collection.find_one(
+                {"_id": f"sprint_{sprint_id}"},
+                {"issues": 0},  # Loại bỏ trường issues để giảm kích thước response
+            )
+
+            # Trả về thông tin sprint nếu tìm thấy
+            if sprint_document:
+                return sprint_document
+
+            return None
+        except Exception as e:
+            if is_running_in_streamlit():
+                st.error(f"Lỗi khi lấy thông tin sprint từ MongoDB: {str(e)}")
+            return None
+
     def get_all_sprints(self):
         """Lấy danh sách tất cả các sprints từ MongoDB
 

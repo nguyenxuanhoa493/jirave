@@ -99,6 +99,22 @@ class SprintReportService:
         issues = self.mongo_client.get_issues(sprint_id)
         return issues
 
+    def get_sprint_info_from_mongo(self, sprint_id):
+        """Lấy thông tin của sprint từ MongoDB
+
+        Args:
+            sprint_id (int): ID của sprint
+
+        Returns:
+            dict: Thông tin của sprint từ MongoDB, bao gồm updated_at
+        """
+        if not self.mongo_client.is_connected():
+            st.error("Không thể kết nối đến MongoDB!")
+            return None
+
+        sprint_info = self.mongo_client.get_sprint_info(sprint_id)
+        return sprint_info
+
 
 def calculate_days_remaining(end_date_str):
     """Tính số ngày còn lại của sprint
@@ -916,7 +932,15 @@ def display_performance_chart(filtered_issues):
             (data["ahead_of_schedule"] + data["on_schedule"]) / data["done_issues"]
             if data["done_issues"] > 0
             else 0
+        ) * 10
+        issue_count = min(
+            10, data["done_issues"] / max(df_performance["Đã hoàn thành"]) * 10
         )
+        ahead_rate = (
+            data["ahead_of_schedule"] / data["done_issues"]
+            if data["done_issues"] > 0
+            else 0
+        ) * 10
 
         # Thời gian trung bình cho mỗi issue hoàn thành
         data["avg_time_per_issue"] = (
@@ -1255,6 +1279,19 @@ def main():
             "Vui lòng đồng bộ dữ liệu sprint này trong trang **Đồng bộ dữ liệu** trước khi xem báo cáo."
         )
         st.stop()
+
+    # Lấy thông tin sprint từ MongoDB bao gồm updated_at
+    sprint_mongo_info = sprint_service.get_sprint_info_from_mongo(sprint_id)
+
+    # Hiển thị thời gian cập nhật cuối cùng nếu có
+    if sprint_mongo_info and "updated_at" in sprint_mongo_info:
+        updated_at = sprint_mongo_info["updated_at"]
+        # Chuyển đổi thời gian UTC sang múi giờ Việt Nam (GMT+7)
+        if isinstance(updated_at, datetime):
+            vietnam_tz = pytz.timezone("Asia/Ho_Chi_Minh")
+            updated_at = updated_at.replace(tzinfo=pytz.UTC).astimezone(vietnam_tz)
+            formatted_time = updated_at.strftime("%d/%m/%Y %H:%M:%S")
+            st.info(f"Dữ liệu được cập nhật lần cuối: {formatted_time} (GMT+7)")
 
     # Thêm bộ lọc show_in_dashboard_final và include_todo trong cùng một hàng
     filter_col1, filter_col2 = st.columns(2)

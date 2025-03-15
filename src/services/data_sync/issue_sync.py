@@ -325,10 +325,28 @@ def process_issue_details(jira_client, issue, sprint_info=None):
         if dev_done_date:
             try:
                 # Kiểm tra kiểu dữ liệu trước khi xử lý
-                if not isinstance(dev_done_date, str):
+                if isinstance(dev_done_date, dict):
+                    # Nếu dev_done_date là một từ điển, thử lấy trường "toString" hoặc "name"
+                    if "toString" in dev_done_date:
+                        dev_done_date = dev_done_date.get("toString", "")
+                    elif "name" in dev_done_date:
+                        dev_done_date = dev_done_date.get("name", "")
+                    else:
+                        # Nếu không có trường hợp nào phù hợp, chuyển đổi thành chuỗi JSON
+                        dev_done_date = json.dumps(dev_done_date)
+                elif not isinstance(dev_done_date, str):
                     dev_done_date = str(dev_done_date)
-                date_obj = datetime.fromisoformat(dev_done_date.replace("Z", "+00:00"))
-                formatted_dev_done_date = date_obj.strftime("%d/%m/%Y %H:%M")
+
+                # Chỉ xử lý nếu dev_done_date là chuỗi và có định dạng ngày hợp lệ
+                if isinstance(dev_done_date, str) and (
+                    "T" in dev_done_date or ":" in dev_done_date
+                ):
+                    date_obj = datetime.fromisoformat(
+                        dev_done_date.replace("Z", "+00:00")
+                    )
+                    formatted_dev_done_date = date_obj.strftime("%d/%m/%Y %H:%M")
+                else:
+                    formatted_dev_done_date = str(dev_done_date)
             except Exception as e:
                 print(f"Lỗi khi định dạng thời gian Dev Done: {str(e)}")
                 formatted_dev_done_date = str(dev_done_date)
@@ -338,10 +356,28 @@ def process_issue_details(jira_client, issue, sprint_info=None):
         if test_done_date:
             try:
                 # Kiểm tra kiểu dữ liệu trước khi xử lý
-                if not isinstance(test_done_date, str):
+                if isinstance(test_done_date, dict):
+                    # Nếu test_done_date là một từ điển, thử lấy trường "toString" hoặc "name"
+                    if "toString" in test_done_date:
+                        test_done_date = test_done_date.get("toString", "")
+                    elif "name" in test_done_date:
+                        test_done_date = test_done_date.get("name", "")
+                    else:
+                        # Nếu không có trường hợp nào phù hợp, chuyển đổi thành chuỗi JSON
+                        test_done_date = json.dumps(test_done_date)
+                elif not isinstance(test_done_date, str):
                     test_done_date = str(test_done_date)
-                date_obj = datetime.fromisoformat(test_done_date.replace("Z", "+00:00"))
-                formatted_test_done_date = date_obj.strftime("%d/%m/%Y %H:%M")
+
+                # Chỉ xử lý nếu test_done_date là chuỗi và có định dạng ngày hợp lệ
+                if isinstance(test_done_date, str) and (
+                    "T" in test_done_date or ":" in test_done_date
+                ):
+                    date_obj = datetime.fromisoformat(
+                        test_done_date.replace("Z", "+00:00")
+                    )
+                    formatted_test_done_date = date_obj.strftime("%d/%m/%Y %H:%M")
+                else:
+                    formatted_test_done_date = str(test_done_date)
             except Exception as e:
                 print(f"Lỗi khi định dạng thời gian Test Done: {str(e)}")
                 formatted_test_done_date = str(test_done_date)
@@ -353,14 +389,6 @@ def process_issue_details(jira_client, issue, sprint_info=None):
 
         # Tìm và lấy danh sách commit từ các comment
         commits = []
-        comments = issue.get("fields", {}).get("comment", {}).get("comments", [])
-        for comment in comments:
-            comment_text = comment.get("body", "")
-            # Tìm các commit ID trong comment (giả định commit ID có định dạng mã hash git)
-            commit_pattern = r"commit[:\s]+([a-fA-F0-9]{7,40})"
-            found_commits = re.findall(commit_pattern, comment_text)
-            if found_commits:
-                commits.extend(found_commits)
 
         # Lấy commit từ trường Development (Jira Dev Tools)
         development_info = issue.get("fields", {}).get("development", {})
@@ -417,7 +445,6 @@ def process_issue_details(jira_client, issue, sprint_info=None):
                 tester = str(cf_tester)
 
         issue["tester"] = tester
-
         # Lấy parent key nếu issue là subtask
         if issue.get("fields", {}).get("parent"):
             parent_data = issue.get("fields", {}).get("parent", {})
