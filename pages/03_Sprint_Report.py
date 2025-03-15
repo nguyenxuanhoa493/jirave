@@ -933,10 +933,14 @@ def display_performance_chart(filtered_issues):
             if data["done_issues"] > 0
             else 0
         ) * 10
-        issue_count = min(
-            10, data["done_issues"] / max(df_performance["Đã hoàn thành"]) * 10
-        )
-        ahead_rate = (
+
+        # Tạo các biến issue_count và ahead_rate với logic đơn giản hơn
+        # Tránh sử dụng df_performance vì chưa tồn tại
+        # Issue count sẽ được cập nhật lại sau khi có df_performance
+        data["issue_count"] = data["done_issues"]
+
+        # Tính ahead_rate ngay tại đây
+        data["ahead_rate"] = (
             data["ahead_of_schedule"] / data["done_issues"]
             if data["done_issues"] > 0
             else 0
@@ -1018,6 +1022,16 @@ def display_performance_chart(filtered_issues):
 
     # Sắp xếp DataFrame theo điểm hiệu suất giảm dần
     df_performance = df_performance.sort_values(by="Điểm hiệu suất", ascending=False)
+
+    # Tìm giá trị tối đa của số issue hoàn thành
+    max_done_issues = (
+        df_performance["Đã hoàn thành"].max() if not df_performance.empty else 1
+    )
+
+    # Cập nhật lại issue_count cho tất cả assignee dựa trên max_done_issues
+    for assignee, data in assignees.items():
+        if max_done_issues > 0:
+            data["issue_count"] = min(10, data["done_issues"] / max_done_issues * 10)
 
     # Tạo layout cho biểu đồ và bảng
     perf_col1, perf_col2 = st.columns([3, 2])
@@ -1115,14 +1129,10 @@ def display_performance_chart(filtered_issues):
                     if data["done_issues"] > 0
                     else 0
                 ) * 10
-                issue_count = min(
-                    10, data["done_issues"] / max(df_performance["Đã hoàn thành"]) * 10
-                )
-                ahead_rate = (
-                    data["ahead_of_schedule"] / data["done_issues"]
-                    if data["done_issues"] > 0
-                    else 0
-                ) * 10
+
+                # Sử dụng giá trị đã được tính trước đó
+                issue_count = data["issue_count"]
+                ahead_rate = data["ahead_rate"]
 
                 # Thêm trace cho mỗi assignee
                 fig_radar.add_trace(
