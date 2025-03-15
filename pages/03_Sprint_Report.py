@@ -1534,6 +1534,27 @@ def main():
         # Hiển thị phân bố chênh lệch thời gian
         display_time_diff_charts(filtered_issues, show_dashboard_final, include_todo)
 
+        # Hiển thị danh sách các issues đã lọc
+        st.subheader("Danh sách các issues đã lọc")
+
+        # Tạo expander để không chiếm quá nhiều không gian trên trang
+        with st.expander("Nhấn để xem danh sách chi tiết", expanded=False):
+            # Chuyển danh sách issues sang DataFrame
+            df_issues = pd.DataFrame(filtered_issues)
+
+            # Hiển thị DataFrame
+            st.dataframe(
+                df_issues,
+                use_container_width=True,
+                height=500,
+                hide_index=True,
+            )
+
+            # Thông tin về số lượng issues đang hiển thị
+            st.caption(
+                f"Hiển thị {len(filtered_issues)} issues từ tổng số {len(issues_final)} trong filter hiện tại."
+            )
+
     else:
         st.info(f"Không có issue nào thuộc nhóm {selected_dev_group}")
 
