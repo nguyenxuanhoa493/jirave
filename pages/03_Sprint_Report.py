@@ -928,11 +928,14 @@ def display_performance_chart(filtered_issues):
         )
 
         # Tỷ lệ đúng hạn và trước hạn
-        on_time_rate = (
+        on_time_rate_raw = (
             (data["ahead_of_schedule"] + data["on_schedule"]) / data["done_issues"]
             if data["done_issues"] > 0
             else 0
-        ) * 10
+        )
+
+        # Lưu giá trị on_time_rate nhân 10 cho biểu đồ radar (để giữ tương thích)
+        on_time_rate = on_time_rate_raw * 10
 
         # Tạo các biến issue_count và ahead_rate với logic đơn giản hơn
         # Tránh sử dụng df_performance vì chưa tồn tại
@@ -994,8 +997,8 @@ def display_performance_chart(filtered_issues):
         data["efficiency_score"] = (
             (completion_rate * 30)
             + (min(1, time_efficiency_capped / 2) * 30)
-            + (on_time_rate * 20)
-            + (completed_workload * 2)  # Nhân 2 để chuyển thang 0-10 thành 0-20
+            + (on_time_rate_raw * 20)  # Sử dụng tỷ lệ gốc, không nhân 10
+            + (min(1, completed_workload / 10) * 20)  # Chuẩn hóa về 0-1 và nhân với 20
         )
 
     # Tạo DataFrame cho hiển thị dữ liệu đánh giá
@@ -1123,12 +1126,15 @@ def display_performance_chart(filtered_issues):
                     )
                     * 5,
                 )
-                on_time_rate = (
+                on_time_rate_raw = (
                     (data["ahead_of_schedule"] + data["on_schedule"])
                     / data["done_issues"]
                     if data["done_issues"] > 0
                     else 0
-                ) * 10
+                )
+
+                # Lưu giá trị on_time_rate nhân 10 cho biểu đồ radar (để giữ tương thích)
+                on_time_rate = on_time_rate_raw * 10
 
                 # Sử dụng giá trị đã được tính trước đó
                 issue_count = data["issue_count"]
