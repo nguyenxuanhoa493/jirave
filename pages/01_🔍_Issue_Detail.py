@@ -1,4 +1,13 @@
 import streamlit as st
+
+# Set page configuration first
+st.set_page_config(
+    page_title="Chi tiết Issue | Jira Analytics",
+    page_icon="🔍",
+    layout="wide",
+    initial_sidebar_state="auto",
+)
+
 import os
 import sys
 import json
@@ -17,11 +26,6 @@ from src.config.config import (
     DEFAULT_PROJECT,
 )
 from src.services.jira_client import JiraClient
-
-# Set page configuration
-st.set_page_config(
-    page_title="Issue Detail", layout=APP_LAYOUT, initial_sidebar_state=SIDEBAR_STATE
-)
 
 
 class IssueDetailService:

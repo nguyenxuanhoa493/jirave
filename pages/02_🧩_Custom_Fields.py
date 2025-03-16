@@ -1,4 +1,13 @@
 import streamlit as st
+
+# Set page configuration first
+st.set_page_config(
+    page_title="Trường Tùy Chỉnh | Jira Analytics",
+    page_icon="🧩",
+    layout="wide",
+    initial_sidebar_state="auto",
+)
+
 import os
 import sys
 import json

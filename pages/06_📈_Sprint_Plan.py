@@ -25,7 +25,8 @@ from src.utils.date_utils import get_current_time
 
 # Thiết lập cấu hình trang
 st.set_page_config(
-    page_title="Kế Hoạch Sprint",
+    page_title="Kế Hoạch Sprint | Jira Analytics",
+    page_icon="📈",
     layout=APP_LAYOUT,
     initial_sidebar_state=SIDEBAR_STATE,
 )
@@ -455,17 +456,52 @@ def display_sprint_stats():
     # Hiển thị phân bổ theo người được gán
     st.subheader("Thống kê theo người được gán")
 
+    # Tính toán thời gian mục tiêu cho mỗi người
+    if "average_target_per_person" not in locals():
+        sprint_number, work_days, hours_per_day = (
+            stat_service.get_target_capacity_from_sprint_name(
+                selected_sprint.get("name", "")
+            )
+        )
+        average_target_per_person = work_days * hours_per_day
+
+    # Di chuyển slider lên đây, trước phần tạo bảng thống kê
+    target_percentage = st.slider(
+        "Tùy chỉnh mục tiêu (%)",
+        min_value=5,
+        max_value=100,
+        value=100,
+        step=5,
+        help="Điều chỉnh phần trăm mục tiêu thời gian làm việc",
+    )
+
+    # Tính toán mục tiêu điều chỉnh dựa trên phần trăm
+    adjusted_target = average_target_per_person * (target_percentage / 100)
+
+    st.info(
+        f"Mục tiêu gốc: {average_target_per_person:.1f}h/người | Mục tiêu điều chỉnh: {adjusted_target:.1f}h/người ({target_percentage}%)"
+    )
+
     # Tạo dataframe cho bảng assignee
     assignee_data = []
 
     for assignee, data in stats["by_assignee"].items():
+        # Tính % so với mục tiêu tùy chỉnh
+        target_percentage_value = (
+            (data["hours_remaining"] / adjusted_target * 100)
+            if adjusted_target > 0
+            else 0
+        )
+
         assignee_data.append(
             {
                 "Người được gán": assignee,
                 "Số issues": data["issues"],
                 "Dự kiến (giờ)": f"{data['hours_original']:.1f}h",
-                "Còn lại (giờ)": f"{data['hours_remaining']:.1f}h",
                 "Đã dùng (giờ)": f"{data['hours_spent']:.1f}h",
+                "Còn lại (giờ)": f"{data['hours_remaining']:.1f}h",
+                "% so với mục tiêu": f"{target_percentage_value:.1f}%",
+                "% mục tiêu (số)": target_percentage_value,  # Cột ẩn dùng để định dạng màu
             }
         )
 
@@ -474,7 +510,41 @@ def display_sprint_stats():
 
     if assignee_data:
         df_assignee = pd.DataFrame(assignee_data)
-        st.dataframe(df_assignee, use_container_width=True)
+
+        # Áp dụng định dạng màu nền xanh cho các hàng có % so với mục tiêu >= 80%
+        def highlight_rows(row):
+            # Tạo chuỗi CSS trống cho tất cả các cột
+            default = ""
+            target_value = row["% mục tiêu (số)"]
+
+            # Nếu giá trị % so với mục tiêu >= 80%, bôi xanh toàn bộ hàng
+            if target_value >= 80:
+                return ["background-color: #d4edda"] * len(row)  # Màu xanh lá nhạt
+            return [default] * len(row)
+
+        # Tạo một bản sao của DataFrame ban đầu (có chứa tất cả các cột cần thiết cho việc định dạng)
+        df_display = df_assignee.copy()
+
+        # Áp dụng định dạng trên DataFrame ban đầu
+        styled_original = df_assignee.style.apply(highlight_rows, axis=1)
+
+        # Tạo một DataFrame mới không có cột cần ẩn
+        df_display = df_assignee.drop(columns=["% mục tiêu (số)"])
+
+        # Định dạng hàm highlight mới cho DataFrame đã loại bỏ cột
+        def highlight_rows_display(row):
+            value_dict = row.to_dict()
+            target_value = float(value_dict["% so với mục tiêu"].replace("%", ""))
+
+            # Nếu giá trị % so với mục tiêu >= 80%, bôi xanh toàn bộ hàng
+            if target_value >= 80:
+                return ["background-color: #d4edda"] * len(row)  # Màu xanh lá nhạt
+            return [""] * len(row)
+
+        # Áp dụng định dạng cho DataFrame đã loại bỏ cột
+        styled_df = df_display.style.apply(highlight_rows_display, axis=1)
+
+        st.dataframe(styled_df, use_container_width=True)
 
         # Vẽ biểu đồ phân bổ công việc
         try:
@@ -492,14 +562,6 @@ def display_sprint_stats():
 
             if chart_data:
                 df_chart = pd.DataFrame(chart_data)
-
-                # Tính toán thời gian mục tiêu cho mỗi người
-                sprint_number, work_days, hours_per_day = (
-                    stat_service.get_target_capacity_from_sprint_name(
-                        selected_sprint.get("name", "")
-                    )
-                )
-                average_target_per_person = work_days * hours_per_day
 
                 # Vẽ biểu đồ cột so sánh ước tính và còn lại
                 fig = go.Figure()
@@ -534,13 +596,25 @@ def display_sprint_stats():
                     )
                 )
 
-                # Thêm đường target line
+                # Thêm đường target line gốc (đổi thành dạng "legendonly")
                 fig.add_trace(
                     go.Scatter(
                         x=df_chart["Người được gán"],
                         y=[average_target_per_person] * len(df_chart),
                         mode="lines",
-                        name=f"Mục tiêu ({average_target_per_person:.1f}h/người)",
+                        name=f"Mục tiêu gốc ({average_target_per_person:.1f}h/người)",
+                        line=dict(color="gray", width=2, dash="dash"),
+                        visible="legendonly",  # Ẩn mặc định
+                    )
+                )
+
+                # Thêm đường target line được điều chỉnh
+                fig.add_trace(
+                    go.Scatter(
+                        x=df_chart["Người được gán"],
+                        y=[adjusted_target] * len(df_chart),
+                        mode="lines",
+                        name=f"Mục tiêu điều chỉnh ({adjusted_target:.1f}h/người - {target_percentage}%)",
                         line=dict(color="red", width=2, dash="dash"),
                     )
                 )
@@ -553,14 +627,20 @@ def display_sprint_stats():
                         tickfont=dict(size=12),
                     ),
                     legend=dict(
-                        x=0,
-                        y=1.0,
-                        bgcolor="rgba(255, 255, 255, 0)",
-                        bordercolor="rgba(255, 255, 255, 0)",
+                        x=1.02,  # Đặt legend bên ngoài biểu đồ, phía bên phải
+                        y=1.0,  # Căn chỉnh theo phía trên cùng
+                        xanchor="left",  # Neo bên trái của legend
+                        yanchor="top",  # Neo phía trên của legend
+                        orientation="v",  # Sắp xếp theo chiều dọc (v thay vì vertical)
+                        bgcolor="rgba(255, 255, 255, 0.8)",  # Nền hơi đục để dễ đọc
+                        bordercolor="rgba(0, 0, 0, 0.1)",  # Viền mỏng
+                        borderwidth=1,  # Độ dày viền
+                        font=dict(size=12),  # Kích thước font
                     ),
                     barmode="group",
                     bargap=0.15,
                     bargroupgap=0.1,
+                    margin=dict(r=150),  # Tăng lề bên phải để có chỗ cho legend
                 )
 
                 st.plotly_chart(fig, use_container_width=True)

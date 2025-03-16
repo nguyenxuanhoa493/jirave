@@ -10,7 +10,10 @@ import numpy as np
 
 # Set page configuration first
 st.set_page_config(
-    page_title="Báo Cáo Sprint", layout="wide", initial_sidebar_state="auto"
+    page_title="Báo Cáo Sprint | Jira Analytics",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="auto",
 )
 
 # Add the project root to the Python path

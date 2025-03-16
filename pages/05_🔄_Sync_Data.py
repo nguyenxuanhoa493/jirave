@@ -1,8 +1,18 @@
 import streamlit as st
+
+# Set page configuration first
+st.set_page_config(
+    page_title="Đồng bộ dữ liệu | Jira Analytics",
+    page_icon="🔄",
+    layout="wide",
+    initial_sidebar_state="auto",
+)
+
 import os
 import sys
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+import pytz
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
@@ -19,6 +29,31 @@ from src.services.mongodb_client import is_running_in_streamlit
 from src.services.utils.issue_utils import safe_get_status
 from src.ui.components.sprint_selector import select_sprint
 import json
+
+
+def adjust_sprint_end_date(original_end_date):
+    """Điều chỉnh thời gian kết thúc Sprint để mở rộng đến 23:59 của ngày Chủ nhật tiếp theo.
+
+    Args:
+        original_end_date (datetime): Thời gian kết thúc gốc của Sprint từ Jira API
+
+    Returns:
+        datetime: Thời gian kết thúc đã điều chỉnh (23:59 của ngày Chủ nhật)
+    """
+    # Xác định ngày trong tuần (0 = Thứ 2, 6 = Chủ nhật)
+    weekday = original_end_date.weekday()
+
+    # Tính số ngày cần thêm để đạt đến Chủ nhật tiếp theo
+    # Trong Python, weekday() trả về 0 cho Thứ 2, 1 cho Thứ 3, ..., 6 cho Chủ nhật
+    days_to_add = 0
+    if weekday < 6:  # Nếu không phải Chủ nhật
+        days_to_add = 6 - weekday
+
+    # Điều chỉnh thời gian kết thúc đến 23:59:59 của ngày Chủ nhật
+    adjusted_end_date = original_end_date + timedelta(days=days_to_add)
+    adjusted_end_date = adjusted_end_date.replace(hour=23, minute=59, second=59)
+
+    return adjusted_end_date
 
 
 def display_sync_tab(sync_service):
@@ -211,22 +246,41 @@ def display_debug_tab(sync_service):
                 # Cập nhật trạng thái sprint dựa trên changelog
                 if raw_issue.get("changelog", {}).get("histories", []):
                     status_changes_in_sprint = []
+
+                    # Lấy thời gian bắt đầu và kết thúc sprint
+                    sprint_start_date = None
+                    sprint_end_date = None
+                    adjusted_end_date = None
+
+                    if sprint_info.get("startDate"):
+                        sprint_start_date = datetime.fromisoformat(
+                            sprint_info.get("startDate").replace("Z", "+00:00")
+                        )
+                    if sprint_info.get("endDate"):
+                        sprint_end_date = datetime.fromisoformat(
+                            sprint_info.get("endDate").replace("Z", "+00:00")
+                        )
+                        # Điều chỉnh thời gian kết thúc sprint đến 23:59 Chủ nhật
+                        adjusted_end_date = adjust_sprint_end_date(sprint_end_date)
+                        st.info(
+                            f"Thời gian kết thúc sprint gốc: {sprint_end_date.strftime('%Y-%m-%d %H:%M:%S')}"
+                        )
+                        st.info(
+                            f"Thời gian kết thúc sprint đã điều chỉnh: {adjusted_end_date.strftime('%Y-%m-%d %H:%M:%S')}"
+                        )
+
                     for history in raw_issue["changelog"]["histories"]:
                         history_created = history.get("created", "")
                         if history_created:
                             history_date = datetime.fromisoformat(
                                 history_created.replace("Z", "+00:00")
                             )
-                            if sprint_info.get("startDate") and sprint_info.get(
-                                "endDate"
-                            ):
-                                sprint_start_date = datetime.fromisoformat(
-                                    sprint_info.get("startDate").replace("Z", "+00:00")
-                                )
-                                sprint_end_date = datetime.fromisoformat(
-                                    sprint_info.get("endDate").replace("Z", "+00:00")
-                                )
-                                if sprint_start_date <= history_date <= sprint_end_date:
+                            if sprint_start_date and adjusted_end_date:
+                                if (
+                                    sprint_start_date
+                                    <= history_date
+                                    <= adjusted_end_date
+                                ):
                                     items = history.get("items", [])
                                     status_changes = [
                                         item
@@ -314,6 +368,8 @@ def display_debug_tab(sync_service):
             # Lấy thông tin thời gian của sprint nếu có
             sprint_start_date = None
             sprint_end_date = None
+            adjusted_end_date = None
+
             if sprint_info:
                 if sprint_info.get("startDate"):
                     sprint_start_date = datetime.fromisoformat(
@@ -323,6 +379,8 @@ def display_debug_tab(sync_service):
                     sprint_end_date = datetime.fromisoformat(
                         sprint_info.get("endDate").replace("Z", "+00:00")
                     )
+                    # Điều chỉnh thời gian kết thúc sprint đến 23:59 Chủ nhật
+                    adjusted_end_date = adjust_sprint_end_date(sprint_end_date)
 
             # Hiển thị JSON
             st.subheader("1. Dữ liệu raw từ API")
@@ -344,8 +402,12 @@ def display_debug_tab(sync_service):
                             history_date = datetime.fromisoformat(
                                 history_created.replace("Z", "+00:00")
                             )
-                            if sprint_start_date and sprint_end_date:
-                                if sprint_start_date <= history_date <= sprint_end_date:
+                            if sprint_start_date and adjusted_end_date:
+                                if (
+                                    sprint_start_date
+                                    <= history_date
+                                    <= adjusted_end_date
+                                ):
                                     filtered_histories.append(history)
                                     # Kiểm tra nếu có thay đổi trạng thái
                                     items = history.get("items", [])
@@ -430,8 +492,12 @@ def display_debug_tab(sync_service):
                             history_date = datetime.fromisoformat(
                                 history_created.replace("Z", "+00:00")
                             )
-                            if sprint_start_date and sprint_end_date:
-                                if sprint_start_date <= history_date <= sprint_end_date:
+                            if sprint_start_date and adjusted_end_date:
+                                if (
+                                    sprint_start_date
+                                    <= history_date
+                                    <= adjusted_end_date
+                                ):
                                     items = history.get("items", [])
                                     status_changes = [
                                         item
@@ -494,6 +560,7 @@ def display_debug_tab(sync_service):
                     if sprint_info:
                         sprint_start_date = None
                         sprint_end_date = None
+                        adjusted_end_date = None
 
                         if sprint_info.get("startDate"):
                             sprint_start_date = datetime.fromisoformat(
@@ -503,12 +570,14 @@ def display_debug_tab(sync_service):
                             sprint_end_date = datetime.fromisoformat(
                                 sprint_info.get("endDate").replace("Z", "+00:00")
                             )
+                            # Điều chỉnh thời gian kết thúc sprint đến 23:59 Chủ nhật
+                            adjusted_end_date = adjust_sprint_end_date(sprint_end_date)
 
-                        if sprint_start_date and sprint_end_date:
+                        if sprint_start_date and adjusted_end_date:
                             st.markdown("### Worklog trong khoảng thời gian sprint")
                             st.markdown(f"**Sprint**: {sprint_info.get('name', 'N/A')}")
                             st.markdown(
-                                f"**Thời gian sprint**: {sprint_start_date.strftime('%d/%m/%Y')} → {sprint_end_date.strftime('%d/%m/%Y')}"
+                                f"**Thời gian sprint**: {sprint_start_date.strftime('%d/%m/%Y')} → {sprint_end_date.strftime('%d/%m/%Y')} (Điều chỉnh đến: {adjusted_end_date.strftime('%d/%m/%Y %H:%M')})"
                             )
 
                             # Lọc worklog trong khoảng thời gian của sprint
@@ -523,7 +592,7 @@ def display_debug_tab(sync_service):
                                         if (
                                             sprint_start_date
                                             <= worklog_date
-                                            <= sprint_end_date
+                                            <= adjusted_end_date
                                         ):
                                             sprint_worklogs.append(worklog)
                                     except Exception as e:
@@ -695,7 +764,11 @@ def display_debug_tab(sync_service):
 
                 st.info(f"Sprint: {sprint_name}")
                 st.info(f"Sprint ID: {sprint_id}")
-                st.info(f"Thời gian sprint: {sprint_start} → {sprint_end}")
+                if sprint_start_date and adjusted_end_date:
+                    st.info(f"Thời gian sprint: {sprint_start} → {sprint_end}")
+                    st.info(
+                        f"Thời gian sprint điều chỉnh: {sprint_start_date.strftime('%Y-%m-%d %H:%M')} → {adjusted_end_date.strftime('%Y-%m-%d %H:%M')}"
+                    )
             else:
                 st.warning("Không có thông tin về sprint để kiểm tra thời gian")
 
@@ -921,21 +994,8 @@ def display_data_sync():
         display_debug_tab(sync_service)
 
 
-def setup_page():
-    """Thiết lập trang khi chạy trực tiếp"""
-    # Set page configuration
-    st.set_page_config(
-        page_title="Đồng bộ dữ liệu",
-        layout=APP_LAYOUT,
-        initial_sidebar_state=SIDEBAR_STATE,
-    )
-
-
 def main():
     """Hàm chính để chạy ứng dụng"""
-    # Thiết lập trang
-    setup_page()
-
     # Hiển thị giao diện đồng bộ dữ liệu
     display_data_sync()
 
