@@ -255,9 +255,24 @@ def display_sprint_stats():
 
     st.title("📊 Thống Kê Kế Hoạch Sprint")
 
+    # Khởi tạo các giá trị trong session_state nếu chưa có
+    if "selected_sprint_id" not in st.session_state:
+        st.session_state.selected_sprint_id = None
+    if "selected_project" not in st.session_state:
+        st.session_state.selected_project = None
+    if "sprint_issues" not in st.session_state:
+        st.session_state.sprint_issues = None
+    if "non_project_count" not in st.session_state:
+        st.session_state.non_project_count = 0
+    if "excluded_count" not in st.session_state:
+        st.session_state.excluded_count = 0
+
     # Khởi tạo dịch vụ
     stat_service = SprintStatService()
 
+    # Nút tải lại dữ liệu ở đầu trang
+    reload_button = st.button("🔄 Tải lại dữ liệu", help="Tải lại dữ liệu mới nhất từ Jira")
+    
     # Sidebar cho cấu hình
     st.sidebar.header("Cấu hình")
 
@@ -303,7 +318,7 @@ def display_sprint_stats():
     selected_sprint_id = st.sidebar.selectbox(
         "Chọn Sprint",
         options=list(sprint_options.keys()),
-        format_func=lambda x: sprint_options.get(x, ""),
+        format_func=lambda x: f"{sprint_options.get(x, '')} (ID: {x})",
         index=default_index,
     )
 
@@ -361,19 +376,32 @@ def display_sprint_stats():
         target_hours = work_days * hours_per_day * active_members_count
 
     # Lấy và hiển thị thống kê issues của sprint
-    with st.spinner("Đang tải dữ liệu issues..."):
-        sprint_issues = stat_service.get_sprint_issues(selected_sprint_id)
+    def get_and_filter_sprint_issues(sprint_id, project_key):
+        """Lấy và lọc dữ liệu issues từ Jira"""
+        # Lấy issues từ sprint
+        sprint_issues = stat_service.get_sprint_issues(sprint_id)
 
         if not sprint_issues:
-            st.warning(f"Sprint {selected_sprint.get('name')} không có issues nào")
-            return
-
+            return None, 0, 0
+            
+        # Lọc các issue không thuộc dự án hiện tại
+        project_issues = []
+        non_project_count = 0
+        
+        for issue in sprint_issues:
+            # Kiểm tra dự án của issue
+            issue_key = issue.get("key", "")
+            if issue_key.startswith(project_key + "-"):
+                project_issues.append(issue)
+            else:
+                non_project_count += 1
+        
         # Lọc các issue không hợp lệ
         excluded_statuses = ["Dev Done", "Test Done", "Deployed", "Done"]
         filtered_issues = []
         excluded_count = 0
 
-        for issue in sprint_issues:
+        for issue in project_issues:
             fields = issue.get("fields", {})
 
             # Kiểm tra loại issue
@@ -396,24 +424,56 @@ def display_sprint_stats():
 
             # Thêm vào danh sách đã lọc
             filtered_issues.append(issue)
+            
+        return filtered_issues, non_project_count, excluded_count
+    
+    # Kiểm tra và tải dữ liệu mới nếu cần
+    need_reload = (
+        reload_button or 
+        st.session_state.sprint_issues is None or
+        st.session_state.selected_sprint_id != selected_sprint_id or
+        st.session_state.selected_project != selected_project
+    )
+    
+    if need_reload:
+        with st.spinner("Đang tải dữ liệu issues..."):
+            try:
+                filtered_issues, non_project_count, excluded_count = get_and_filter_sprint_issues(
+                    selected_sprint_id, selected_project
+                )
+                
+                # Lưu vào session state để sử dụng lại
+                st.session_state.sprint_issues = filtered_issues
+                st.session_state.non_project_count = non_project_count
+                st.session_state.excluded_count = excluded_count
+                st.session_state.selected_sprint_id = selected_sprint_id
+                st.session_state.selected_project = selected_project
+            except Exception as e:
+                st.error(f"Lỗi khi tải dữ liệu: {str(e)}")
+                return
+    else:
+        # Sử dụng dữ liệu đã lưu trong session state
+        filtered_issues = st.session_state.sprint_issues
+        non_project_count = st.session_state.non_project_count
+        excluded_count = st.session_state.excluded_count
+    
+    # Hiển thị thông báo
+    if non_project_count > 0:
+        st.info(f"Đã loại bỏ {non_project_count} issues không thuộc dự án {selected_project}")
+    
+    if excluded_count > 0:
+        st.info(f"Đã loại bỏ {excluded_count} issues không phù hợp (Epic, có subtasks, hoặc đã hoàn thành)")
+    
+    # Kiểm tra nếu không có issues hợp lệ
+    if not filtered_issues:
+        st.warning(f"Sprint {selected_sprint.get('name')} không có issues hợp lệ sau khi lọc")
+        return
+    
+    # Sử dụng issues đã lọc
+    sprint_issues = filtered_issues
 
-        # Hiển thị thông tin số lượng issue bị loại
-        if excluded_count > 0:
-            st.info(
-                f"Đã loại bỏ {excluded_count} issues không phù hợp (Epic, có subtasks, hoặc đã hoàn thành)"
-            )
-
-        # Sử dụng danh sách issues đã lọc
-        sprint_issues = filtered_issues
-
-        if not sprint_issues:
-            st.warning(
-                f"Sprint {selected_sprint.get('name')} không có issues hợp lệ sau khi lọc"
-            )
-            return
-
-        # Tính toán thống kê
-        stats = stat_service.calculate_sprint_stats(sprint_issues)
+    # Tính toán thống kê
+    stats = stat_service.calculate_sprint_stats(sprint_issues)
 
     # Hiển thị tổng quan
     with col2:
@@ -449,9 +509,9 @@ def display_sprint_stats():
         with time_col1:
             st.metric("Dự kiến (giờ)", f"{stats['total_hours_original']:.1f}h")
         with time_col2:
-            st.metric("Còn lại (giờ)", f"{stats['total_hours_remaining']:.1f}h")
+            st.metric("Đã est (giờ)", f"{stats['total_hours_remaining']:.1f}h")
         with time_col3:
-            st.metric("Đã dùng (giờ)", f"{stats['total_hours_spent']:.1f}h")
+            st.metric("Đã có log (giờ)", f"{stats['total_hours_spent']:.1f}h")
 
     # Hiển thị phân bổ theo người được gán
     st.subheader("Thống kê theo người được gán")
@@ -465,18 +525,22 @@ def display_sprint_stats():
         )
         average_target_per_person = work_days * hours_per_day
 
-    # Di chuyển slider lên đây, trước phần tạo bảng thống kê
-    target_percentage = st.slider(
-        "Tùy chỉnh mục tiêu (%)",
-        min_value=5,
-        max_value=100,
-        value=100,
-        step=5,
-        help="Điều chỉnh phần trăm mục tiêu thời gian làm việc",
+    # Chuyển slider từ dạng % sang dạng số giờ
+    max_hours = work_days * hours_per_day  # Số giờ làm việc tối đa trong tuần
+    adjusted_target = st.slider(
+        "Điều chỉnh mục tiêu (giờ)",
+        min_value=0,
+        max_value=max_hours,
+        value=max_hours,
+        step=4,
+        help="Điều chỉnh số giờ mục tiêu làm việc cho mỗi người",
     )
 
-    # Tính toán mục tiêu điều chỉnh dựa trên phần trăm
-    adjusted_target = average_target_per_person * (target_percentage / 100)
+    # Tính toán phần trăm tương ứng để hiển thị
+    if average_target_per_person > 0:
+        target_percentage = int((adjusted_target / average_target_per_person) * 100)
+    else:
+        target_percentage = 100
 
     st.info(
         f"Mục tiêu gốc: {average_target_per_person:.1f}h/người | Mục tiêu điều chỉnh: {adjusted_target:.1f}h/người ({target_percentage}%)"
@@ -492,14 +556,18 @@ def display_sprint_stats():
             if adjusted_target > 0
             else 0
         )
+        
+        # Tính số giờ còn trống (free hours)
+        free_hours = adjusted_target - data["hours_remaining"]
 
         assignee_data.append(
             {
                 "Người được gán": assignee,
                 "Số issues": data["issues"],
                 "Dự kiến (giờ)": f"{data['hours_original']:.1f}h",
-                "Đã dùng (giờ)": f"{data['hours_spent']:.1f}h",
-                "Còn lại (giờ)": f"{data['hours_remaining']:.1f}h",
+                "Đã có log (giờ)": f"{data['hours_spent']:.1f}h",
+                "Đã est (giờ)": f"{data['hours_remaining']:.1f}h",
+                "Giờ trống": f"{free_hours:.1f}h",
                 "% so với mục tiêu": f"{target_percentage_value:.1f}%",
                 "% mục tiêu (số)": target_percentage_value,  # Cột ẩn dùng để định dạng màu
             }
@@ -551,12 +619,14 @@ def display_sprint_stats():
             # Chuẩn bị dữ liệu cho biểu đồ
             chart_data = []
             for assignee, data in stats["by_assignee"].items():
+                free_hours = adjusted_target - data["hours_remaining"]
                 chart_data.append(
                     {
                         "Người được gán": assignee,
                         "Số giờ dự kiến": data["hours_original"],
-                        "Số giờ còn lại": data["hours_remaining"],
-                        "Số giờ đã dùng": data["hours_spent"],
+                        "Đã est (giờ)": data["hours_remaining"],
+                        "Số giờ đã có log": data["hours_spent"],
+                        "Giờ trống": free_hours,
                     }
                 )
 
@@ -572,15 +642,15 @@ def display_sprint_stats():
                         y=df_chart["Số giờ dự kiến"],
                         name="Dự kiến",
                         marker_color="rgb(55, 83, 109)",
-                        visible=True,  # Hiển thị mặc định
+                        visible="legendonly",  # Ẩn mặc định
                     )
                 )
 
                 fig.add_trace(
                     go.Bar(
                         x=df_chart["Người được gán"],
-                        y=df_chart["Số giờ còn lại"],
-                        name="Còn lại",
+                        y=df_chart["Đã est (giờ)"],
+                        name="Đã est",
                         marker_color="rgb(26, 118, 255)",
                         visible=True,  # Hiển thị mặc định
                     )
@@ -589,8 +659,18 @@ def display_sprint_stats():
                 fig.add_trace(
                     go.Bar(
                         x=df_chart["Người được gán"],
-                        y=df_chart["Số giờ đã dùng"],
-                        name="Đã dùng",
+                        y=df_chart["Giờ trống"],
+                        name="Giờ trống",
+                        marker_color="rgb(46, 204, 113)",
+                        visible="legendonly",  # Ẩn mặc định
+                    )
+                )
+
+                fig.add_trace(
+                    go.Bar(
+                        x=df_chart["Người được gán"],
+                        y=df_chart["Số giờ đã có log"],
+                        name="Đã có log",
                         marker_color="rgb(219, 64, 82)",
                         visible="legendonly",  # Ẩn mặc định, chỉ hiện khi bấm vào legend
                     )
@@ -696,10 +776,10 @@ def display_sprint_stats():
                     "Dự kiến (giờ)": (
                         f"{time_original_hours:.1f}h" if time_original_hours else ""
                     ),
-                    "Còn lại (giờ)": (
+                    "Đã est (giờ)": (
                         f"{time_remaining_hours:.1f}h" if time_remaining_hours else ""
                     ),
-                    "Đã dùng (giờ)": (
+                    "Đã có log (giờ)": (
                         f"{time_spent_hours:.1f}h" if time_spent_hours else ""
                     ),
                 }
@@ -707,29 +787,58 @@ def display_sprint_stats():
 
         if issue_data:
             df_issues = pd.DataFrame(issue_data)
-
-            # Thêm bộ lọc
-            filter_cols = st.columns(2)
-            with filter_cols[0]:
-                show_no_estimate = st.checkbox(
-                    "Hiển thị issues chưa có thời gian dự kiến", value=True
-                )
-            with filter_cols[1]:
-                show_no_remaining = st.checkbox(
-                    "Hiển thị issues không còn thời gian còn lại", value=True
-                )
-
+            
+            # Container cho bộ lọc và thanh tìm kiếm
+            filter_container = st.container()
+            
+            with filter_container:
+                # Thêm thanh tìm kiếm
+                search_col, est_col, assigned_col = st.columns(3)
+                
+                with search_col:
+                    search_query = st.text_input("🔍 Tìm kiếm", placeholder="Nhập từ khóa...")
+                    
+                with est_col:
+                    show_no_estimate = st.checkbox(
+                        "Hiển thị issues chưa có est", value=True
+                    )
+                    
+                with assigned_col:
+                    # Lấy danh sách tất cả người được gán
+                    assignees = df_issues["Người được gán"].unique().tolist()
+                    assignees.insert(0, "Tất cả")  # Thêm lựa chọn "Tất cả" vào đầu danh sách
+                    
+                    selected_assignee = st.selectbox(
+                        "Lọc theo người được gán",
+                        options=assignees,
+                        index=0
+                    )
+            
             # Áp dụng bộ lọc
             filtered_df = df_issues.copy()
+            
+            # Lọc theo từ khóa tìm kiếm
+            if search_query:
+                mask = filtered_df.apply(
+                    lambda row: any(
+                        search_query.lower() in str(val).lower() 
+                        for val in row.values
+                    ), 
+                    axis=1
+                )
+                filtered_df = filtered_df[mask]
 
             if not show_no_estimate:
-                # Lọc chỉ giữ lại các issue có thời gian dự kiến
-                filtered_df = filtered_df[filtered_df["Dự kiến (giờ)"] != ""]
+                # Lọc chỉ giữ lại các issue có thời gian est
+                filtered_df = filtered_df[filtered_df["Đã est (giờ)"] != ""]
+                
+            # Lọc theo người được gán
+            if selected_assignee != "Tất cả":
+                filtered_df = filtered_df[filtered_df["Người được gán"] == selected_assignee]
 
-            if not show_no_remaining:
-                # Lọc chỉ giữ lại các issue có thời gian còn lại
-                filtered_df = filtered_df[filtered_df["Còn lại (giờ)"] != ""]
-
+            # Hiển thị số lượng issues sau khi lọc
+            st.caption(f"Hiển thị {len(filtered_df)} trên tổng số {len(df_issues)} issues")
+            
             # Hiển thị dataframe đã lọc
             st.dataframe(filtered_df, use_container_width=True)
 
