@@ -27,7 +27,7 @@ class SprintClient(BaseJiraClient):
         return []
 
     def get_sprint_issues(
-        self, sprint_id, fields=None, status_names=None, max_issues=1000
+        self, sprint_id, fields=None, status_names=None, max_issues=1000, project_key=None
     ):
         """Lấy tất cả issues trong một sprint
 
@@ -37,6 +37,7 @@ class SprintClient(BaseJiraClient):
             status_names (list, optional): Lọc theo tên trạng thái
             max_issues (int, optional): Số lượng issues tối đa cần lấy, mặc định 1000
                                         Nếu max_issues=-1, sẽ lấy tất cả issues
+            project_key (str, optional): Mã dự án cần lọc
 
         Returns:
             list: Danh sách issues
@@ -54,6 +55,8 @@ class SprintClient(BaseJiraClient):
 
         # Xây dựng JQL query
         jql = f"sprint = {sprint_id}"
+        if project_key:
+            jql += f" AND project = {project_key}"
         if status_names:
             status_clause = " OR ".join([f'status = "{s}"' for s in status_names])
             jql += f" AND ({status_clause})"

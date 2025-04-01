@@ -92,7 +92,7 @@ class SprintStatService:
             ]
 
         # Lấy tất cả issues của sprint
-        return self.jira.get_sprint_issues(sprint_id, fields=fields)
+        return self.jira.get_sprint_issues(sprint_id, fields=fields, project_key=st.session_state.selected_project)
 
     def calculate_sprint_stats(self, sprint_issues):
         """Tính toán thống kê cho sprint

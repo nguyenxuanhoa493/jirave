@@ -81,7 +81,7 @@ class JiraClientFacade:
         return self.sprint_client.get_board_sprints(board_id, state)
 
     def get_sprint_issues(
-        self, sprint_id, fields=None, status_names=None, max_issues=1000
+        self, sprint_id, fields=None, status_names=None, max_issues=1000, project_key=None
     ):
         """Delegate to sprint client
 
@@ -91,12 +91,13 @@ class JiraClientFacade:
             status_names (list, optional): Lọc theo tên trạng thái
             max_issues (int, optional): Số lượng issues tối đa cần lấy, mặc định 1000
                                         Nếu max_issues=-1, sẽ lấy tất cả issues
+            project_key (str, optional): Mã dự án cần lọc
 
         Returns:
             list: Danh sách issues
         """
         return self.sprint_client.get_sprint_issues(
-            sprint_id, fields, status_names, max_issues
+            sprint_id, fields, status_names, max_issues, project_key
         )
 
     def get_sprint_report(self, board_id, sprint_id):

@@ -738,12 +738,20 @@ def display_time_diff_charts(
             )
             assignee = issue.get("assignee", "Không có")
 
+            # Tính phần trăm chênh lệch
+            time_estimate = issue["estimate"]
+            time_spent = issue["spent"]
+            if time_estimate > 0:
+                diff_percentage = (time_diff / time_estimate) * 100
+            else:
+                diff_percentage = 0
+
             st.markdown(
                 f"""
                 <div style='margin-bottom: 10px; padding: 10px; border: 1px solid #ddd; border-radius: 5px;'>
                     <div><b>{issue['key']}</b> - {issue['summary'][:50]}...</div>
                     <div>Assignee: {assignee}</div>
-                    <div>Chênh lệch: <span style='color: {time_diff_color}'>{time_diff_text}</span></div>
+                    <div>Thời gian: {time_estimate:.1f}h → {time_spent:.1f}h | Chênh lệch: <span style='color: {time_diff_color}; font-weight: bold'>{time_diff_text}</span> ({diff_percentage:+.1f}%)</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1212,6 +1220,229 @@ def display_performance_chart(filtered_issues):
         )
 
 
+def display_time_analysis_by_user(filtered_issues):
+    """Hiển thị biểu đồ phân tích thời gian theo user
+
+    Args:
+        filtered_issues (list): Danh sách issues đã được lọc
+    """
+    st.subheader(
+        "Phân tích thời gian theo User",
+        help="Phân tích thời gian đã log theo từng user, phân chia theo loại issue",
+    )
+
+    # Tạo dictionary để lưu thời gian theo user
+    user_time = {}
+
+    # Lọc các issue có sprint_time_spent
+    issues_with_sprint_time = [
+        issue for issue in filtered_issues if issue.get("sprint_time_spent", 0) > 0
+    ]
+
+    for issue in issues_with_sprint_time:
+        assignee = issue.get("assignee", "Không có")
+        if assignee not in user_time:
+            user_time[assignee] = {
+                "non_dev": 0,  # Thời gian cho issue non-dev
+                "popup": 0,  # Thời gian cho issue popup
+                "development": 0,  # Thời gian cho issue development
+                "issues": {  # Lưu danh sách issues cho mỗi loại
+                    "non_dev": [],
+                    "popup": [],
+                    "development": [],
+                },
+            }
+
+        sprint_time_spent = issue.get("sprint_time_spent", 0)
+        show_in_dashboard_value = issue.get("show_in_dashboard", "")
+        show_in_dashboard = show_in_dashboard_value is True or (
+            isinstance(show_in_dashboard_value, str)
+            and show_in_dashboard_value.upper() == "YES"
+        )
+        popup_value = issue.get("popup", "")
+        is_popup = popup_value is True or (
+            isinstance(popup_value, str) and popup_value.upper() == "YES"
+        )
+
+        if not show_in_dashboard:
+            user_time[assignee]["non_dev"] += sprint_time_spent
+            user_time[assignee]["issues"]["non_dev"].append(issue)
+        elif is_popup:
+            user_time[assignee]["popup"] += sprint_time_spent
+            user_time[assignee]["issues"]["popup"].append(issue)
+        else:
+            user_time[assignee]["development"] += sprint_time_spent
+            user_time[assignee]["issues"]["development"].append(issue)
+
+    # Loại bỏ user "Không có" nếu có
+    if "Không có" in user_time:
+        del user_time["Không có"]
+
+    if not user_time:
+        st.info("Không có dữ liệu thời gian để phân tích.")
+        return
+
+    # Tạo DataFrame cho dữ liệu
+    data = []
+    for assignee, times in user_time.items():
+        total_time = sum([times["non_dev"], times["popup"], times["development"]])
+        data.append(
+            {
+                "Assignee": assignee,
+                "Non-dev": times["non_dev"],
+                "Popup": times["popup"],
+                "Development": times["development"],
+                "Tổng thời gian": total_time,
+                "% Non-dev": (
+                    (times["non_dev"] / total_time * 100) if total_time > 0 else 0
+                ),
+                "% Popup": (times["popup"] / total_time * 100) if total_time > 0 else 0,
+                "% Development": (
+                    (times["development"] / total_time * 100) if total_time > 0 else 0
+                ),
+            }
+        )
+
+    df_time = pd.DataFrame(data)
+
+    # Tạo layout 2 cột
+
+    # Tạo biểu đồ stacked bar
+    fig = go.Figure()
+
+    # Thêm các loại thời gian
+    fig.add_trace(
+        go.Bar(
+            name="Non-dev",
+            x=df_time["Assignee"],
+            y=df_time["Non-dev"],
+            marker_color="#FF9999",
+            text=df_time["% Non-dev"].apply(lambda x: f"{x:.1f}%"),
+            textposition="auto",
+            customdata=df_time[["Assignee", "Non-dev"]].values,
+            hovertemplate="<b>%{customdata[0]}</b><br>"
+            + "Thời gian: %{y:.1f}h<br>"
+            + "Tỷ lệ: %{text}<br>"
+            + "<extra></extra>",
+        )
+    )
+
+    fig.add_trace(
+        go.Bar(
+            name="Popup",
+            x=df_time["Assignee"],
+            y=df_time["Popup"],
+            marker_color="#FFCC99",
+            text=df_time["% Popup"].apply(lambda x: f"{x:.1f}%"),
+            textposition="auto",
+            customdata=df_time[["Assignee", "Popup"]].values,
+            hovertemplate="<b>%{customdata[0]}</b><br>"
+            + "Thời gian: %{y:.1f}h<br>"
+            + "Tỷ lệ: %{text}<br>"
+            + "<extra></extra>",
+        )
+    )
+
+    fig.add_trace(
+        go.Bar(
+            name="Development",
+            x=df_time["Assignee"],
+            y=df_time["Development"],
+            marker_color="#99CC99",
+            text=df_time["% Development"].apply(lambda x: f"{x:.1f}%"),
+            textposition="auto",
+            customdata=df_time[["Assignee", "Development"]].values,
+            hovertemplate="<b>%{customdata[0]}</b><br>"
+            + "Thời gian: %{y:.1f}h<br>"
+            + "Tỷ lệ: %{text}<br>"
+            + "<extra></extra>",
+        )
+    )
+
+    # Cập nhật layout
+    fig.update_layout(
+        barmode="stack",
+        title="Phân bố thời gian theo loại issue",
+        xaxis_title="Assignee",
+        yaxis_title="Thời gian (giờ)",
+        height=400,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        clickmode="event+select",
+    )
+
+    # Hiển thị biểu đồ
+    st.plotly_chart(fig, use_container_width=True)
+
+    # # Thêm selectbox để chọn assignee và loại thời gian
+    # col1, col2 = st.columns(2)
+    # with col1:
+    #     selected_assignee = st.selectbox(
+    #         "Chọn Assignee",
+    #         options=df_time["Assignee"].tolist(),
+    #         key="selected_assignee",
+    #     )
+    # with col2:
+    #     selected_category = st.selectbox(
+    #         "Chọn loại thời gian",
+    #         options=["non_dev", "popup", "development"],
+    #         format_func=lambda x: {
+    #             "non_dev": "Non-dev",
+    #             "popup": "Popup",
+    #             "development": "Development",
+    #         }[x],
+    #         key="selected_category",
+    #     )
+
+    # # Hiển thị danh sách issues tương ứng
+    # if selected_assignee and selected_category:
+    #     selected_issues = user_time[selected_assignee]["issues"][selected_category]
+
+    #     if selected_issues:
+    #         st.subheader(
+    #             f"Danh sách issues của {selected_assignee} - {selected_category}"
+    #         )
+
+    #         # Tạo DataFrame cho danh sách issues
+    #         issues_data = []
+    #         for issue in selected_issues:
+    #             issues_data.append(
+    #                 {
+    #                     "Key": issue.get("key", ""),
+    #                     "Summary": issue.get("summary", ""),
+    #                     "Status": issue.get("status", ""),
+    #                     "Thời gian (h)": issue.get("sprint_time_spent", 0),
+    #                     "Show in Dashboard": issue.get("show_in_dashboard", ""),
+    #                     "Popup": issue.get("popup", ""),
+    #                 }
+    #             )
+
+    #         df_selected = pd.DataFrame(issues_data)
+    #         st.dataframe(df_selected, use_container_width=True, hide_index=True)
+    #     else:
+    #         st.info(
+    #             f"Không có issues nào cho {selected_assignee} trong danh mục {selected_category}"
+    #         )
+
+    # with time_col2:
+    #     # Hiển thị bảng dữ liệu chi tiết
+    #     st.dataframe(
+    #         df_time[
+    #             [
+    #                 "Assignee",
+    #                 "Tổng thời gian",
+    #                 "Non-dev",
+    #                 "Popup",
+    #                 "Development",
+    #                 "% Non-dev",
+    #                 "% Popup",
+    #                 "% Development",
+    #             ]
+    #         ].round(1),
+    #         use_container_width=True,
+    #         hide_index=True,
+    #     )
+
+
 def main():
     """Hàm chính của ứng dụng"""
     st.title("Báo Cáo Sprint")
@@ -1340,226 +1571,257 @@ def main():
             formatted_time = updated_at.strftime("%d/%m/%Y %H:%M:%S")
             st.info(f"Dữ liệu được cập nhật lần cuối: {formatted_time}")
 
-    # Thêm bộ lọc show_in_dashboard_final và include_todo trong cùng một hàng
-    filter_col1, filter_col2 = st.columns(2)
+    # Tạo tabs cho các loại báo cáo khác nhau
+    tab1, tab2 = st.tabs(["📊 Báo cáo Sprint", "⏱️ Phân tích thời gian"])
 
-    with filter_col1:
-        show_dashboard_final = st.toggle(
-            "Chỉ hiển thị issues có Show In Dashboard Final", value=True
-        )
+    with tab1:
+        # Thêm bộ lọc show_in_dashboard_final và include_todo trong cùng một hàng
+        filter_col1, filter_col2 = st.columns(2)
 
-    with filter_col2:
-        include_todo = st.toggle(
-            "Bổ sung issues To Do có Show In Dashboard",
-            value=False,
-            help="Bổ sung các issue có trạng thái To Do và có Show In Dashboard vào danh sách",
-        )
+        with filter_col1:
+            show_dashboard_final = st.toggle(
+                "Chỉ hiển thị issues có Show In Dashboard Final",
+                value=True,
+                key="show_dashboard_final_tab1",
+            )
 
-    # Lọc issues theo show_in_dashboard_final và include_todo
-    if show_dashboard_final:
-        issues_final = [
-            issue for issue in issues if issue.get("show_in_dashboard_final", False)
-        ]
-        # Nếu include_todo được bật, bổ sung thêm các issue To Do có show_in_dashboard
-        if include_todo:
-            todo_issues = [
+        with filter_col2:
+            include_todo = st.toggle(
+                "Bổ sung issues To Do có Show In Dashboard",
+                value=False,
+                help="Bổ sung các issue có trạng thái To Do và có Show In Dashboard vào danh sách",
+                key="include_todo_tab1",
+            )
+
+        # Lọc issues theo show_in_dashboard_final và include_todo
+        if show_dashboard_final:
+            issues_final = [
+                issue for issue in issues if issue.get("show_in_dashboard_final", False)
+            ]
+            # Nếu include_todo được bật, bổ sung thêm các issue To Do có show_in_dashboard
+            if include_todo:
+                todo_issues = [
+                    issue
+                    for issue in issues
+                    if issue.get("status") == "To Do"
+                    and issue.get("show_in_dashboard", False)
+                    and not issue.get("show_in_dashboard_final", False)
+                ]
+                issues_final.extend(todo_issues)
+
+            # Thêm các issue có log time và SHOW IN DASHBOARD = YES
+            additional_issues = [
                 issue
                 for issue in issues
-                if issue.get("status") == "To Do"
-                and issue.get("show_in_dashboard", False)
-                and not issue.get("show_in_dashboard_final", False)
+                if issue.get("show_in_dashboard", False)
+                and issue.get("time_spent", 0) > 0  # Có log time
+                and not issue.get(
+                    "show_in_dashboard_final", False
+                )  # Chưa có trong danh sách
+                and issue.get("status") != "To Do"  # Không phải issue To Do
             ]
-            issues_final.extend(todo_issues)
+            issues_final.extend(additional_issues)
 
-        if not issues_final:
-            st.warning("Không có issue nào thỏa mãn điều kiện hiển thị!")
-            st.stop()
-    else:
-        issues_final = issues
-
-    # Hiển thị thông tin cơ bản của sprint trong bố cục cột
-    st.subheader(
-        f"Sprint: {selected_sprint['data'].get('name', '')} ({selected_sprint['data'].get('state', '').upper()})"
-    )
-
-    # Lấy thông tin thời gian của sprint
-    start_date_str = selected_sprint["data"].get("startDate", "")
-    end_date_str = selected_sprint["data"].get("endDate", "")
-
-    # Format thời gian hiển thị theo GMT+7
-    start_date = format_date(start_date_str)
-    end_date = format_date(end_date_str)
-
-    # Tính số ngày còn lại và tiến độ sprint
-    days_remaining = calculate_days_remaining(end_date_str)
-    progress_percent = calculate_sprint_progress(start_date_str, end_date_str)
-
-    # Bố trí thông tin sprint thành 2 cột
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if start_date and end_date:
-            st.write(f"**Thời gian:** {start_date} → {end_date}")
-        if days_remaining is not None:
-            if days_remaining >= 0:
-                st.write(f"**Ngày còn lại:** {days_remaining} ngày")
-            else:
-                st.write(f"**Quá hạn:** {abs(days_remaining)} ngày")
-
-    with col2:
-        goal = selected_sprint["data"].get("goal", "")
-        if goal:
-            st.write(f"**Mục tiêu:** {goal}")
-
-    # Hiển thị thanh tiến độ thời gian
-    if progress_percent is not None:
-        st.write("**Tiến độ thời gian sprint:**")
-        progress_color = "normal"
-        if progress_percent > 80:
-            progress_color = "red"
-        elif progress_percent > 50:
-            progress_color = "orange"
-
-        st.progress(progress_percent / 100, text=f"{progress_percent:.1f}%")
-
-        if progress_percent < 100:
-            elapsed_text = f"Đã trôi qua {progress_percent:.1f}% thời gian sprint"
+            if not issues_final:
+                st.warning("Không có issue nào thỏa mãn điều kiện hiển thị!")
+                st.stop()
         else:
-            elapsed_text = "Sprint đã kết thúc"
-        st.caption(elapsed_text)
+            issues_final = issues
 
-    # Thêm bộ lọc dev_group và assignee trong cùng một hàng
-    filter_col1, filter_col2 = st.columns(2)
-
-    with filter_col1:
-        dev_groups = ["DEV FULL", "DEV FE", "NON DEV"]
-        selected_dev_group = st.selectbox(
-            "Lọc theo nhóm developer",
-            options=dev_groups,
-            index=0,  # Mặc định là "DEV FULL"
+        # Hiển thị thông tin cơ bản của sprint trong bố cục cột
+        st.subheader(
+            f"Sprint: {selected_sprint['data'].get('name', '')} ({selected_sprint['data'].get('state', '').upper()})"
         )
 
-    with filter_col2:
-        # Lấy danh sách assignee từ issues_final
-        assignees = sorted(
-            list(
-                set(
-                    issue.get("assignee", "")
-                    for issue in issues_final
-                    if issue.get("assignee")
+        # Lấy thông tin thời gian của sprint
+        start_date_str = selected_sprint["data"].get("startDate", "")
+        end_date_str = selected_sprint["data"].get("endDate", "")
+
+        # Format thời gian hiển thị theo GMT+7
+        start_date = format_date(start_date_str)
+        end_date = format_date(end_date_str)
+
+        # Tính số ngày còn lại và tiến độ sprint
+        days_remaining = calculate_days_remaining(end_date_str)
+        progress_percent = calculate_sprint_progress(start_date_str, end_date_str)
+
+        # Bố trí thông tin sprint thành 2 cột
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if start_date and end_date:
+                st.write(f"**Thời gian:** {start_date} → {end_date}")
+            if days_remaining is not None:
+                if days_remaining >= 0:
+                    st.write(f"**Ngày còn lại:** {days_remaining} ngày")
+                else:
+                    st.write(f"**Quá hạn:** {abs(days_remaining)} ngày")
+
+        with col2:
+            goal = selected_sprint["data"].get("goal", "")
+            if goal:
+                st.write(f"**Mục tiêu:** {goal}")
+
+        # Hiển thị thanh tiến độ thời gian
+        if progress_percent is not None:
+            st.write("**Tiến độ thời gian sprint:**")
+            progress_color = "normal"
+            if progress_percent > 80:
+                progress_color = "red"
+            elif progress_percent > 50:
+                progress_color = "orange"
+
+            st.progress(progress_percent / 100, text=f"{progress_percent:.1f}%")
+
+            if progress_percent < 100:
+                elapsed_text = f"Đã trôi qua {progress_percent:.1f}% thời gian sprint"
+            else:
+                elapsed_text = "Sprint đã kết thúc"
+            st.caption(elapsed_text)
+
+        # Thêm bộ lọc dev_group và assignee trong cùng một hàng
+        filter_col1, filter_col2 = st.columns(2)
+
+        with filter_col1:
+            dev_groups = ["DEV FULL + DEV FE", "DEV FULL", "DEV FE", "NON DEV"]
+            selected_dev_group = st.selectbox(
+                "Lọc theo nhóm developer",
+                options=dev_groups,
+                index=0,  # Mặc định là "DEV FULL + DEV FE"
+            )
+
+        with filter_col2:
+            # Lấy danh sách assignee từ issues_final
+            assignees = sorted(
+                list(
+                    set(
+                        issue.get("assignee", "")
+                        for issue in issues_final
+                        if issue.get("assignee")
+                    )
                 )
             )
-        )
-        assignees.insert(0, "Tất cả")  # Thêm option "Tất cả" vào đầu danh sách
-        selected_assignee = st.selectbox(
-            "Lọc theo Assignee", options=assignees, index=0
-        )
-
-    # Lọc issues theo dev_group và assignee đã chọn
-    filtered_issues = [
-        issue
-        for issue in issues_final
-        if issue.get("dev_group") == selected_dev_group
-        and (
-            selected_assignee == "Tất cả" or issue.get("assignee") == selected_assignee
-        )
-    ]
-
-    # Hiển thị thống kê
-    st.subheader("Thống kê")
-
-    stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
-
-    with stat_col1:
-        total_issues = len(filtered_issues)
-        done_issues = len(
-            [
-                issue
-                for issue in filtered_issues
-                if issue.get("status", "").lower() in ["done"]
-            ]
-        )
-        st.metric(
-            "Tổng số issue Done",
-            f"{done_issues}/{total_issues} ({(done_issues/total_issues)*100:.1f}%)",
-        )
-
-    with stat_col2:
-        dev_done_issues = len(
-            [
-                issue
-                for issue in filtered_issues
-                if issue.get("status", "").lower()
-                in ["dev done", "test done", "deployed", "done"]
-            ]
-        )
-        st.metric(
-            "Số issue dev done",
-            f"{dev_done_issues}/{total_issues} ({(dev_done_issues/total_issues)*100:.1f}%)",
-        )
-
-    with stat_col3:
-        popup_issues = len(
-            [issue for issue in filtered_issues if issue.get("popup") is True]
-        )
-        st.metric(
-            "Số issue Popup",
-            f"{popup_issues}/{total_issues} ({(popup_issues/total_issues)*100:.1f}%)",
-        )
-
-    with stat_col4:
-        dashboard_final_issues = len(
-            [
-                issue
-                for issue in filtered_issues
-                if issue.get("show_in_dashboard_final") is True
-            ]
-        )
-        st.metric("Số issue Dashboard Final", dashboard_final_issues)
-
-    # Hiển thị danh sách issues
-    if filtered_issues:
-        # Hiển thị Burn Down Chart
-        display_burndown_chart(
-            filtered_issues,
-            selected_sprint["data"].get("startDate", ""),
-            selected_sprint["data"].get("endDate", ""),
-        )
-        # Hiển thị Status Chart
-        display_status_chart(filtered_issues)
-
-        # Hiển thị phân bố theo loại issue và customer
-        display_distribution_charts(filtered_issues)
-
-        # Hiển thị biểu đồ đánh giá hiệu suất của assignee
-        display_performance_chart(filtered_issues)
-
-        # Hiển thị phân bố chênh lệch thời gian
-        display_time_diff_charts(filtered_issues, show_dashboard_final, include_todo)
-
-        # Hiển thị danh sách các issues đã lọc
-        st.subheader("Danh sách các issues đã lọc")
-
-        # Tạo expander để không chiếm quá nhiều không gian trên trang
-        with st.expander("Nhấn để xem danh sách chi tiết", expanded=False):
-            # Chuyển danh sách issues sang DataFrame
-            df_issues = pd.DataFrame(filtered_issues)
-
-            # Hiển thị DataFrame
-            st.dataframe(
-                df_issues,
-                use_container_width=True,
-                height=500,
-                hide_index=True,
+            assignees.insert(0, "Tất cả")  # Thêm option "Tất cả" vào đầu danh sách
+            selected_assignee = st.selectbox(
+                "Lọc theo Assignee", options=assignees, index=0
             )
 
-            # Thông tin về số lượng issues đang hiển thị
-            st.caption(
-                f"Hiển thị {len(filtered_issues)} issues từ tổng số {len(issues_final)} trong filter hiện tại."
+        # Lọc issues theo dev_group và assignee đã chọn
+        filtered_issues = [
+            issue
+            for issue in issues_final
+            if (
+                selected_dev_group == "DEV FULL + DEV FE"
+                and issue.get("dev_group") in ["DEV FULL", "DEV FE"]
+            )
+            or issue.get("dev_group") == selected_dev_group
+            and (
+                selected_assignee == "Tất cả"
+                or issue.get("assignee") == selected_assignee
+            )
+        ]
+
+        # Hiển thị thống kê
+        st.subheader("Thống kê")
+
+        stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+
+        with stat_col1:
+            total_issues = len(filtered_issues)
+            done_issues = len(
+                [
+                    issue
+                    for issue in filtered_issues
+                    if issue.get("status", "").lower() in ["done"]
+                ]
+            )
+            st.metric(
+                "Tổng số issue Done",
+                f"{done_issues}/{total_issues} ({(done_issues/total_issues)*100:.1f}%)",
             )
 
-    else:
-        st.info(f"Không có issue nào thuộc nhóm {selected_dev_group}")
+        with stat_col2:
+            dev_done_issues = len(
+                [
+                    issue
+                    for issue in filtered_issues
+                    if issue.get("status", "").lower()
+                    in ["dev done", "test done", "deployed", "done"]
+                ]
+            )
+            st.metric(
+                "Số issue dev done",
+                f"{dev_done_issues}/{total_issues} ({(dev_done_issues/total_issues)*100:.1f}%)",
+            )
+
+        with stat_col3:
+            popup_issues = len(
+                [issue for issue in filtered_issues if issue.get("popup") is True]
+            )
+            st.metric(
+                "Số issue Popup",
+                f"{popup_issues}/{total_issues} ({(popup_issues/total_issues)*100:.1f}%)",
+            )
+
+        with stat_col4:
+            dashboard_final_issues = len(
+                [
+                    issue
+                    for issue in filtered_issues
+                    if issue.get("show_in_dashboard_final") is True
+                ]
+            )
+            st.metric("Số issue Dashboard Final", dashboard_final_issues)
+
+        # Hiển thị danh sách issues
+        if filtered_issues:
+            # Hiển thị Burn Down Chart
+            display_burndown_chart(
+                filtered_issues,
+                selected_sprint["data"].get("startDate", ""),
+                selected_sprint["data"].get("endDate", ""),
+            )
+            # Hiển thị Status Chart
+            display_status_chart(filtered_issues)
+
+            # Hiển thị phân bố theo loại issue và customer
+            display_distribution_charts(filtered_issues)
+
+            # Hiển thị biểu đồ đánh giá hiệu suất của assignee
+            display_performance_chart(filtered_issues)
+
+            # Hiển thị phân bố chênh lệch thời gian
+            display_time_diff_charts(
+                filtered_issues, show_dashboard_final, include_todo
+            )
+
+            # Hiển thị danh sách các issues đã lọc
+            st.subheader("Danh sách các issues đã lọc")
+
+            # Tạo expander để không chiếm quá nhiều không gian trên trang
+            with st.expander("Nhấn để xem danh sách chi tiết", expanded=False):
+                # Chuyển danh sách issues sang DataFrame
+                df_issues = pd.DataFrame(filtered_issues)
+
+                # Hiển thị DataFrame
+                st.dataframe(
+                    df_issues,
+                    use_container_width=True,
+                    height=500,
+                    hide_index=True,
+                )
+
+                # Thông tin về số lượng issues đang hiển thị
+                st.caption(
+                    f"Hiển thị {len(filtered_issues)} issues từ tổng số {len(issues_final)} trong filter hiện tại."
+                )
+
+        else:
+            st.info(f"Không có issue nào thuộc nhóm {selected_dev_group}")
+
+    with tab2:
+        # Hiển thị phân tích thời gian theo user
+        display_time_analysis_by_user(issues)
 
 
 def format_date(date_str):

@@ -78,6 +78,25 @@ def sync_sprint_issues(
 
     sprint_name = sprint_info.get("name", f"Sprint {sprint_id}")
 
+    # Lấy thông tin board để lấy project key
+    board_id = sprint_info.get("originBoardId")
+    if not board_id:
+        if is_running_in_streamlit():
+            st.error(f"Không tìm thấy board ID cho sprint {sprint_id}")
+        return []
+
+    try:
+        board_info = jira_client.get(f"board/{board_id}", use_agile_api=True).json()
+        project_key = board_info.get("location", {}).get("projectKey")
+        if not project_key:
+            if is_running_in_streamlit():
+                st.error(f"Không tìm thấy project key cho board {board_id}")
+            return []
+    except Exception as e:
+        if is_running_in_streamlit():
+            st.error(f"Lỗi khi lấy thông tin board {board_id}: {str(e)}")
+        return []
+
     # Lấy danh sách issues
     try:
         progress_text = f"Đang đồng bộ issues của sprint {sprint_name}..."
@@ -88,7 +107,12 @@ def sync_sprint_issues(
             progress_bar = st.progress(0)
 
         # Không giới hạn số lượng issues (max_issues=-1 sẽ lấy tất cả)
-        issues = jira_client.get_sprint_issues(sprint_id, fields=fields, max_issues=-1)
+        issues = jira_client.get_sprint_issues(
+            sprint_id, 
+            fields=fields, 
+            max_issues=-1,
+            project_key=project_key
+        )
 
         if not issues:
             if is_running_in_streamlit():
