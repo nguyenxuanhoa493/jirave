@@ -7,6 +7,7 @@ import pytz
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
+import re
 
 # Set page configuration first
 st.set_page_config(
@@ -1305,7 +1306,17 @@ def display_time_analysis_by_user(filtered_issues):
 
     df_time = pd.DataFrame(data)
 
-    # Tạo layout 2 cột
+    # Tính định mức làm việc dựa trên tên sprint
+    sprint_name = st.session_state.get("current_sprint_name", "")
+    numbers = re.findall(r"\d+", sprint_name)
+    if numbers:
+        sprint_number = int(numbers[0])
+        work_days = 5 if sprint_number % 2 == 0 else 6  # Chẵn: 5 ngày, lẻ: 6 ngày
+    else:
+        work_days = 5  # Mặc định 5 ngày nếu không tìm thấy số trong tên sprint
+
+    hours_per_day = 8
+    target_hours = work_days * hours_per_day
 
     # Tạo biểu đồ stacked bar
     fig = go.Figure()
@@ -1359,6 +1370,17 @@ def display_time_analysis_by_user(filtered_issues):
         )
     )
 
+    # Thêm line giờ làm việc của tuần
+    fig.add_trace(
+        go.Scatter(
+            x=df_time["Assignee"],
+            y=[target_hours] * len(df_time),
+            mode="lines",
+            name=f"Định mức ({target_hours}h)",
+            line=dict(color="red", width=2, dash="dash"),
+        )
+    )
+
     # Cập nhật layout
     fig.update_layout(
         barmode="stack",
@@ -1373,74 +1395,10 @@ def display_time_analysis_by_user(filtered_issues):
     # Hiển thị biểu đồ
     st.plotly_chart(fig, use_container_width=True)
 
-    # # Thêm selectbox để chọn assignee và loại thời gian
-    # col1, col2 = st.columns(2)
-    # with col1:
-    #     selected_assignee = st.selectbox(
-    #         "Chọn Assignee",
-    #         options=df_time["Assignee"].tolist(),
-    #         key="selected_assignee",
-    #     )
-    # with col2:
-    #     selected_category = st.selectbox(
-    #         "Chọn loại thời gian",
-    #         options=["non_dev", "popup", "development"],
-    #         format_func=lambda x: {
-    #             "non_dev": "Non-dev",
-    #             "popup": "Popup",
-    #             "development": "Development",
-    #         }[x],
-    #         key="selected_category",
-    #     )
-
-    # # Hiển thị danh sách issues tương ứng
-    # if selected_assignee and selected_category:
-    #     selected_issues = user_time[selected_assignee]["issues"][selected_category]
-
-    #     if selected_issues:
-    #         st.subheader(
-    #             f"Danh sách issues của {selected_assignee} - {selected_category}"
-    #         )
-
-    #         # Tạo DataFrame cho danh sách issues
-    #         issues_data = []
-    #         for issue in selected_issues:
-    #             issues_data.append(
-    #                 {
-    #                     "Key": issue.get("key", ""),
-    #                     "Summary": issue.get("summary", ""),
-    #                     "Status": issue.get("status", ""),
-    #                     "Thời gian (h)": issue.get("sprint_time_spent", 0),
-    #                     "Show in Dashboard": issue.get("show_in_dashboard", ""),
-    #                     "Popup": issue.get("popup", ""),
-    #                 }
-    #             )
-
-    #         df_selected = pd.DataFrame(issues_data)
-    #         st.dataframe(df_selected, use_container_width=True, hide_index=True)
-    #     else:
-    #         st.info(
-    #             f"Không có issues nào cho {selected_assignee} trong danh mục {selected_category}"
-    #         )
-
-    # with time_col2:
-    #     # Hiển thị bảng dữ liệu chi tiết
-    #     st.dataframe(
-    #         df_time[
-    #             [
-    #                 "Assignee",
-    #                 "Tổng thời gian",
-    #                 "Non-dev",
-    #                 "Popup",
-    #                 "Development",
-    #                 "% Non-dev",
-    #                 "% Popup",
-    #                 "% Development",
-    #             ]
-    #         ].round(1),
-    #         use_container_width=True,
-    #         hide_index=True,
-    #     )
+    # Hiển thị thông tin về định mức làm việc
+    st.info(
+        f"Định mức làm việc: {work_days} ngày × {hours_per_day} giờ/ngày = {target_hours} giờ"
+    )
 
 
 def main():
