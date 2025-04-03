@@ -130,8 +130,8 @@ with tab1:
         # Sử dụng date_input với key để tránh lỗi khi chọn nhiều tháng
         date_range = st.date_input(
             "Chọn khoảng thời gian",
-            value=(first_day_of_month, last_day_of_month),
-            max_value=today,
+            value=(first_day_of_month.date(), last_day_of_month.date()),
+            max_value=today.date(),
             key="date_range",
         )
 
